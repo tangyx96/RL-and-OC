@@ -8,8 +8,9 @@
 | [`zero-order-robotics/`](zero-order-robotics/) | Jordana 等, *Zero-Order Optimization*（[arXiv:2506.22087](https://arxiv.org/abs/2506.22087)） | [`study-notes/`](zero-order-robotics/study-notes/) |
 | [`sqp-oc/`](sqp-oc/) | Jordana SQP/MPC 系列；Chakravorty（[arXiv:2510.03475](https://arxiv.org/abs/2510.03475)） | [`control-optimization-sqp-synthesis.md`](sqp-oc/study-notes/control-optimization-sqp-synthesis.md) |
 | [`clean-rl/`](clean-rl/) | PPO / SAC / FlashSAC | [`ppo_notes.md`](clean-rl/ppo_notes.md)、[`sac_notes.md`](clean-rl/sac_notes.md)、[`flashsac_notes.md`](clean-rl/flashsac_notes.md) |
+| [`mjlab/`](mjlab/) | mjlab（[arXiv:2601.22074](https://arxiv.org/abs/2601.22074)）；应用层对照 [unitree_rl_mjlab](https://github.com/tangyx96/unitree_rl_mjlab) | [`mjlab-introduction.md`](mjlab/mjlab-introduction.md) |
 
-Bertsekas 提供 Bellman / MPC / 策略梯度骨架；Zero-Order 用随机搜索统一 TO 与 RL；SQP 组用数值优化统一 iLQR、DDP 与结构利用型 QP；`clean-rl/` 把策略梯度与 off-policy Actor-Critic 落到推导上。
+Bertsekas 提供 Bellman / MPC / 策略梯度骨架；Zero-Order 用随机搜索统一 TO 与 RL；SQP 组用数值优化统一 iLQR、DDP 与结构利用型 QP；`clean-rl/` 把策略梯度与 off-policy Actor-Critic 落到推导上；`mjlab/` 对应 GPU 并行仿真上的 manager-based 机器人 RL 环境。
 
 版权在原书 / 原论文，仅供个人学习。
 

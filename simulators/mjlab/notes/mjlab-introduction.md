@@ -78,7 +78,7 @@ manager-based API 把环境拆成独立、可组合的管理器。
 | 性能 | 单环境 / 小批量基准 | 官方称约 10–100 倍；NVIDIA 报告相对旧版 MJX，locomotion 约 252 倍、manipulation 约 475 倍 |
 | 典型用途 | 单环境仿真、算法与模型调试 | 大规模 RL 训练、参数扫描 |
 
-吞吐的数量级（取决于机型、接触与 `num_envs`，以下为公开报告而非保证值）：物理步进可达约 \(1.25\times 10^4\) 环境帧/秒；Warp（CUDA）训练可达 \(10^6\) 步/秒量级，而 CPU 仿真常见约 \(10^5\) 步/秒。
+吞吐的数量级（取决于机型、接触与 `num_envs`，以下为公开报告而非保证值）：物理步进可达约 $1.25\times 10^{4}$ 环境帧/秒；Warp（CUDA）训练可达 $10^{6}$ 步/秒量级，而 CPU 仿真常见约 $10^{5}$ 步/秒。
 
 因此：需要检查单个 MJCF、调 PD 或看接触时，仍用原生 MuJoCo；需要在保留 MuJoCo 接触模型的前提下做大规模 on-policy 训练时，用 mjlab。它追求的是 Isaac Lab 量级的并行吞吐，而不是替换 MuJoCo 的建模方式。
 
@@ -257,7 +257,7 @@ rewards = {
 compute → noise → clip → scale → delay → history
 ```
 
-延迟位于历史之前：历史堆叠的是已经延迟的读数。`history_length` 为 MLP 提供时间上下文（默认将时间维展平）；`delay_max_lag` 用环形缓冲模拟传感器时延。换算关系为 \(\mathrm{lag} \approx \mathrm{latency}/\mathrm{step\_dt}\)（观测延迟以**策略步**为单位）。缓冲区仅在启用时分配。
+延迟位于历史之前：历史堆叠的是已经延迟的读数。`history_length` 为 MLP 提供时间上下文（默认将时间维展平）；`delay_max_lag` 用环形缓冲模拟传感器时延。换算关系为 $\mathrm{lag}\approx\mathrm{latency}/\mathrm{step\_dt}$（观测延迟以**策略步**为单位）。缓冲区仅在启用时分配。
 
 **非对称 actor-critic** 是速度跟踪等任务的常用写法：actor 组仅含真机可获得的量（带噪声 IMU、关节状态）；critic 组叠加特权信息（高度扫描、足端接触），并关闭 corruption。训练时价值网络读取 `obs["critic"]`，部署时策略仅读取 `obs["actor"]`。若真机没有基座线速度估计，模仿任务可从 actor 组删除 `base_lin_vel`、锚点位置等项，只需改写 `ObservationGroupCfg.terms`，不必另定义环境类。
 
@@ -354,7 +354,7 @@ step 与 interval 事件在 reset **之前**作用于终止前的状态；随后
 | `decimation` | 每个策略步内的物理步数 |
 | `episode_length_s` | 回合时长（秒） |
 
-策略频率为 \(1/(\mathrm{timestep}\times\mathrm{decimation})\)。速度任务常用 `timestep=0.005`、`decimation=4`，即 200 Hz 物理、50 Hz 策略；`episode_length_s=20` 时每回合为 1000 个策略步。运行时可读取 `env.physics_dt`、`env.step_dt`、`env.max_episode_length`。
+策略频率为 $1/(\mathrm{timestep}\times\mathrm{decimation})$。速度任务常用 `timestep=0.005`、`decimation=4`，即 200 Hz 物理、50 Hz 策略；`episode_length_s=20` 时每回合为 1000 个策略步。运行时可读取 `env.physics_dt`、`env.step_dt`、`env.max_episode_length`。
 
 在 `scale_rewards_by_dt=True` 时改变频率，奖励量级大致保持不变。物理稳定性仍取决于 `timestep` 与求解器设置，不能仅靠增大 `decimation` 维持。
 
@@ -368,7 +368,65 @@ step 与 interval 事件在 reset **之前**作用于终止前的状态；随后
 
 1. **任务注册表。** 每个任务对应一对配置：`ManagerBasedRlEnvCfg` 与 `RslRlOnPolicyRunnerCfg`。`register_mjlab_task` 用字符串 id 绑定二者，并另存 `play_env_cfg`（关闭训练用随机化、延长回合）供评估。官方内置任务多用 `Mjlab-{Category}-{Terrain}-{Robot}`。可选参数 `runner_cls` 默认为 `MjlabOnPolicyRunner`；需要在保存 checkpoint 时导出 ONNX 时再换成自定义子类（见第九部分）。
 2. **`RslRlVecEnvWrapper`。** 将观测字典转换为 RSL-RL 的 TensorDict；合并 `terminated` 与 `truncated` 为 `dones`，并将超时写入 `extras` 以便正确自举；可按配置裁剪动作。构造时调用 `env.reset()`，因为 RSL-RL 在收集 rollout 前不自行 reset。自备 `train.py` 时，仍是先构造 `ManagerBasedRlEnv`，再包装该层，然后交给 runner。
-3. **配置 dataclass。** 网络结构（`RslRlModelCfg`）与 PPO 超参数（`RslRlPpoAlgorithmCfg`）位于 runner 配置中，并经 CLI 暴露。`load_env_cfg`、`load_rl_cfg`、`load_runner_cls` 按 task id 从同一张表取出这三项。
+3. **配置 dataclass。** `RslRlOnPolicyRunnerCfg` 是 mjlab 对 RSL-RL `OnPolicyRunner` 的封装，由 `load_rl_cfg` 按 task id 取出，CLI 前缀为 `--agent`。它不描述物理或 MDP；并行环境数属于 `env.scene.num_envs`（`--num-envs`）。字段很多，下列只说明读配置时必须分清的三块；其余以 `train <task> --help` 与官方 *Training with RSL-RL* 为准。
+
+**网络（`actor` / `critic`，类型为 `RslRlModelCfg`）。** 输入维由观测维决定，输出维由动作维或标量价值决定，均不在此填写。`hidden_dims` 给出全连接隐层的宽度序列：`(512, 256, 128)` 表示三层，宽分别为 512、256、128。`activation` 是这些隐层之间的逐元非线性（G1 速度任务常用 `"elu"`），一般不加在输出头上。actor 与 critic 可取不同宽度。
+
+`obs_normalization=True` 作用于**网络输入**：对各维观测用训练中累计的均值与标准差做 $(o-\mu)/\sigma$（滑动统计），使量纲不同的通道尺度接近。它不改变仿真状态，也不把动作变成标准正态。
+
+连续控制中，actor 的 `distribution_cfg` 指定**动作条件分布**，而非观测分布。`class_name="GaussianDistribution"` 表示 $\pi(a\mid o)=\mathcal{N}(\mu(o),\sigma)$：MLP 给出均值 $\mu$，标准差由该配置给出。训练时从该分布采样动作；评估时常取均值。`init_std` 为 $\sigma$ 的初值；`std_type="scalar"` 表示各动作维共用一个标准差。critic 只有价值头，不含此项。
+
+**算法（`algorithm`，类型为 `RslRlPpoAlgorithmCfg`）。** 控制一次 iteration 内如何用已采集的 batch 更新网络。常用项如下。
+
+| 字段 | 作用 |
+|------|------|
+| `learning_rate`、`schedule` | 优化步长；`adaptive` 按 KL 相对 `desired_kl` 调节 |
+| `clip_param` | PPO 概率比裁剪（常取 0.2） |
+| `entropy_coef` | 策略熵正则 |
+| `value_loss_coef`、`use_clipped_value_loss` | 价值损失权重及是否对 $V$ 做裁剪 |
+| `num_learning_epochs`、`num_mini_batches` | 对同一批数据扫描的轮数与 minibatch 划分 |
+| `gamma`、`lam` | 折扣与 GAE-$\lambda$ |
+| `max_grad_norm` | 梯度范数上限 |
+
+**调度。** `num_steps_per_env` 为每次 iteration 每个环境采集的策略步数（G1 速度任务常用 24）；`max_iterations` 为更新次数；`save_interval` 为 checkpoint 间隔；`experiment_name` 决定日志目录 `logs/rsl_rl/{experiment_name}/`。续训、W&B 上传等字段多保持默认，需要时用 `--agent.resume` 等覆盖。
+
+官方 Unitree G1 速度任务的典型写法如下（字段含义见上，不逐项重复）。
+
+```python
+from mjlab.rl import RslRlModelCfg, RslRlOnPolicyRunnerCfg, RslRlPpoAlgorithmCfg
+
+def unitree_g1_ppo_runner_cfg() -> RslRlOnPolicyRunnerCfg:
+    return RslRlOnPolicyRunnerCfg(
+        actor=RslRlModelCfg(
+            hidden_dims=(512, 256, 128),
+            activation="elu",
+            obs_normalization=True,
+        ),
+        critic=RslRlModelCfg(
+            hidden_dims=(512, 256, 128),
+            activation="elu",
+            obs_normalization=True,
+        ),
+        algorithm=RslRlPpoAlgorithmCfg(
+            value_loss_coef=1.0,
+            use_clipped_value_loss=True,
+            clip_param=0.2,
+            entropy_coef=0.01,
+            num_learning_epochs=5,
+            num_mini_batches=4,
+            learning_rate=1.0e-3,
+            schedule="adaptive",
+            gamma=0.99,
+            lam=0.95,
+            desired_kl=0.01,
+            max_grad_norm=1.0,
+        ),
+        experiment_name="g1_velocity",
+        save_interval=50,
+        num_steps_per_env=24,
+        max_iterations=30_000,
+    )
+```
 
 ### 6.2 命令行
 
@@ -539,7 +597,7 @@ register_mjlab_task(
 
 **（1）XML。** 应能在独立 MuJoCo 中打开。cartpole 包含滑轨、铰链与一个 `<motor>`；在 `gear=10` 且 `ctrlrange="-1 1"` 时，策略输出经内部钳位后的最大力为 10 N。
 
-**（2）Entity。** `spec_fn` 读取 XML；XML 中已有 actuator 时使用 `XmlActuatorCfg`；`init_state` 区分任务变体（摆起：铰链为 \(\pi\)；平衡：铰链为 0）。
+**（2）Entity。** `spec_fn` 读取 XML；XML 中已有 actuator 时使用 `XmlActuatorCfg`；`init_state` 区分任务变体（摆起：铰链为 $\pi$；平衡：铰链为 0）。
 
 ```python
 from pathlib import Path
@@ -580,7 +638,7 @@ def pole_angle_cos_sin(env, asset_cfg: SceneEntityCfg) -> torch.Tensor:
 
 **（5）汇总为 `ManagerBasedRlEnvCfg`。** `scene.entities` 的键（如 `"cartpole"`）必须与所有 `SceneEntityCfg` / `entity_name` 一致。`num_envs=1` 仅为配置默认值，训练时用 `--num-envs` 或 `--env.scene.num-envs` 覆盖。
 
-**（6）编写 `RslRlOnPolicyRunnerCfg` 并注册。** 小规模任务可采用两层、每层 64 维的 MLP。然后：
+**（6）编写 `RslRlOnPolicyRunnerCfg` 并注册。** 字段含义见 6.1。Cartpole 等小规模任务可将 `hidden_dims` 取为 `(64, 64)`。然后：
 
 ```bash
 uv run play Mjlab-Cartpole-Swingup --agent zero

@@ -11,7 +11,7 @@
 | 一、定位与动机 | mjlab 的定义、相对原生 MuJoCo 的优势、与相近框架的比较 |
 | 二、两层架构 | 物理、MDP 编排与训练算法三者如何衔接 |
 | 三、仿真层 | 实体、场景、传感器与 GPU 物理 |
-| 四、管理器层 | 观测、动作、奖励等 MDP 项的组合 |
+| 四、管理器层 | 观测、动作、奖励等 MDP 项；term 配置模板 |
 | 五、生命周期与时间尺度 | 环境步进顺序与时钟参数 |
 | 六、训练与内置任务 | 注册表、CLI 与参考任务 |
 | 七、边界与选型 | 适用范围与常见误用 |
@@ -177,7 +177,7 @@ MuJoCo Warp 是 MuJoCo 的 GPU 后端。它保留 `MjModel` / `MjData` 范式，
 
 ### 3.3 执行器
 
-执行器将位置、速度或力矩指令转换为关节努力，配置于 `EntityCfg.articulation`。类型上应区分：
+执行器配置于 `EntityCfg.articulation`。动作 manager 给出位置、速度或力矩目标；执行器将其转化为关节广义力（*effort*：转动为力矩，移动为力）。位置型为 PD，力矩型直接写 `ctrl`。类型上应区分：
 
 - **内建（builtin）**：在 `MjSpec` 中生成原生 MuJoCo actuator。速度相关阻尼由积分器隐式处理，在高增益或较大步长下更为稳定。文档默认积分器为 **`implicitfast`**。
 - **显式（explicit）**：在 Python 中计算力矩，再经透传 actuator 写入。适用于自定义控制律、转矩–转速饱和或学习型执行器；积分器无法隐式处理其速度导数，数值稳定性通常弱于内建类型。
@@ -200,7 +200,24 @@ MuJoCo Warp 是 MuJoCo 的 GPU 后端。它保留 `MjModel` / `MjData` 范式，
 
 ### 3.5 传感器
 
-传感器配置于 `SceneCfg`，可附着于实体的 site 或关节，也可独立于实体。因此它不属于 `EntityCfg`。XML 中已有的 MuJoCo sensor 在拼接时自动发现，访问名带实体前缀，例如 `env.scene["robot/trunk_imu"]`。
+类型定义于 `mjlab.sensor`，实例列入 `SceneCfg.sensors`。可引用实体元素，也可独立存在，故不属于 `EntityCfg`。运行时 `env.scene["name"]` 索引。XML 中已有的 MuJoCo sensor 自动发现，名带实体前缀，如 `env.scene["robot/trunk_imu"]`。
+
+```python
+from mjlab.scene import SceneCfg
+from mjlab.sensor import GridPatternCfg, ObjRef, RayCastSensorCfg
+
+scene_cfg = SceneCfg(
+    entities={"robot": robot_cfg},
+    sensors=(
+        RayCastSensorCfg(
+            name="height_scanner",
+            frame=ObjRef(type="body", name="pelvis", entity="robot"),
+            pattern=GridPatternCfg(size=(1.6, 1.0), resolution=0.1),
+            max_distance=2.0,
+        ),
+    ),
+)
+```
 
 四类内建传感器：
 
@@ -217,20 +234,9 @@ MuJoCo Warp 是 MuJoCo 的 GPU 后端。它保留 `MjModel` / `MjData` 范式，
 
 ### 4.1 Term 配置
 
-管理器层的基本单元是**名称到配置对象的字典**。观测、奖励、终止、事件、课程、指标等项通常包含 `func`（可调用对象）与 `params`（关键字参数）。动作项与命令项使用专用配置类（如 `JointPositionActionCfg`、`UniformVelocityCommandCfg`），而非上述 `func` 模式。Manager 负责在仿真循环的相应位置调用各项、聚合输出并记录日志。
+管理器层的基本单元是**名称到配置对象的字典**，传入 `ManagerBasedRlEnvCfg(...)`。观测、奖励、终止、事件、课程、指标通常是 `func` + `params`；动作与命令用专用配置类（无通用 `func`）。Manager 在步进循环的固定位置调用各项。
 
-```python
-rewards = {
-    "alive": RewardTermCfg(func=mdp.is_alive, weight=1.0),
-    "joint_torques": RewardTermCfg(
-        func=mdp.joint_torques_l2,
-        weight=-1e-4,
-        params={"asset_cfg": SceneEntityCfg("robot")},
-    ),
-}
-```
-
-无状态计算使用函数 `func(env, **params)`。若需在初始化时缓存下标或在回合内保持状态，应实现为类：以 `(cfg, env)` 构造，调用签名与函数相同，并可实现 `reset(env_ids)`。
+无状态计算用函数 `func(env, **params)`（事件为 `func(env, env_ids, **params)`）。需要缓存下标或跨步状态时写成类：`(cfg, env)` 构造，调用签名与函数相同，可实现 `reset(env_ids)`。`params` 里的 `SceneEntityCfg` 在 manager 初始化时把正则解析成整数下标。
 
 八个 manager 的职责如下。
 
@@ -245,7 +251,7 @@ rewards = {
 | Curriculum | 按表现或训练步数调节难度 |
 | Metrics | 记录不进入优化目标的诊断量 |
 
-下文按「智能体接口 → 训练信号 → 对世界的干预」说明，不枚举全部内建函数。
+下文按「智能体接口 → 训练信号 → 对世界的干预」说明，不枚举全部内建函数。配置模板见第 4.8 节。
 
 ### 4.2 观测
 
@@ -261,7 +267,46 @@ compute → noise → clip → scale → delay → history
 
 **非对称 actor-critic** 是速度跟踪等任务的常用写法：actor 组仅含真机可获得的量（带噪声 IMU、关节状态）；critic 组叠加特权信息（高度扫描、足端接触），并关闭 corruption。训练时价值网络读取 `obs["critic"]`，部署时策略仅读取 `obs["actor"]`。若真机没有基座线速度估计，模仿任务可从 actor 组删除 `base_lin_vel`、锚点位置等项，只需改写 `ObservationGroupCfg.terms`，不必另定义环境类。
 
-内建观测包括基座线速度与角速度、投影重力、相对默认姿态的关节量、上一步动作、当前 command，以及具名传感器读数。自定义观测函数应返回 `[num_envs, D]`。
+内建函数位于 `mjlab.envs.mdp`，均返回 `[num_envs, D]`。写入观测组时构造 `ObservationTermCfg`：
+
+```python
+terms = {
+    "projected_gravity": ObservationTermCfg(func=mdp.projected_gravity),
+    "imu_ang_vel": ObservationTermCfg(
+        func=mdp.builtin_sensor,
+        params={"sensor_name": "robot/imu_ang_vel"},
+    ),
+    "command": ObservationTermCfg(
+        func=mdp.generated_commands,
+        params={"command_name": "twist"},
+    ),
+    "joint_pos": ObservationTermCfg(
+        func=mdp.joint_pos_rel,
+        params={"asset_cfg": SceneEntityCfg("robot"), "biased": False},
+    ),
+    "joint_vel": ObservationTermCfg(func=mdp.joint_vel_rel),
+    "base_lin_vel": ObservationTermCfg(func=mdp.base_lin_vel),
+    "base_ang_vel": ObservationTermCfg(func=mdp.base_ang_vel),
+    "last_action": ObservationTermCfg(func=mdp.last_action),
+    "height_scan": ObservationTermCfg(
+        func=mdp.height_scan,
+        params={"sensor_name": "height_scanner"},
+    ),
+}
+```
+
+| 函数 | 内容 |
+|------|------|
+| `projected_gravity` | 重力在机体系的投影，编码横滚与俯仰 |
+| `builtin_sensor` | 具名 `BuiltinSensor`；`sensor_name` 须与场景一致 |
+| `generated_commands` | 当前 command；`command_name` 对应 `commands` 的键 |
+| `joint_pos_rel` | 相对 `init_state` 的关节角；`biased=True` 叠加 `dr.encoder_bias` |
+| `joint_vel_rel` | 相对默认的关节速度 |
+| `base_lin_vel` / `base_ang_vel` | 机体系基座线速度、角速度 |
+| `last_action` | 上一步动作；可选 `action_name` |
+| `height_scan` | 射线命中点相对高度 |
+
+自定义观测函数签名相同，应返回 `[num_envs, D]`。
 
 在 `flatten_history_dim=True` 且 `concatenate_terms=True` 时，mjlab 使用 **term-major** 顺序（先展平每个 term 的全部历史，再拼接 term）。从采用 time-major 顺序的框架迁移策略时，需要重排观测向量。
 
@@ -271,7 +316,7 @@ Action manager 接收策略输出，按 term 切分，并映射到位置、速�
 
 动作在**每一个物理子步**写入执行器目标，而不是每个策略步写入一次。观测延迟则以策略步计时。
 
-除关节、腱与 site 努力外，**`DifferentialIKAction`** 将笛卡尔指令经阻尼最小二乘 IK 转换为关节位置目标，每个 decimation 子步求解一次，使末端在子步间连续跟踪。
+除关节、腱与 site 广义力外，**`DifferentialIKAction`** 将笛卡尔指令经阻尼最小二乘 IK 转换为关节位置目标，每个 decimation 子步求解一次，使末端在子步间连续跟踪。
 
 Manager 保留最近三次动作，供 `last_action` 观测以及 `action_rate_l2` 等惩罚使用；reset 时清零，以避免回合边界处的信息泄漏。
 
@@ -309,6 +354,93 @@ Event 是在指定生命周期节点修改仿真的统一入口。`mode` 对应�
 Curriculum 在每次 reset 时调用：根据行驶距离、训练步数等调节地形行、速度指令范围、奖励权重或终止阈值。程序化地形为 `num_rows × num_cols` 网格：列表示地形类型，行表示难度。`terrain_levels_vel` 根据本回合行驶距离升行或降行；到达最高行后随机重新分配，以保持各难度均有样本。
 
 Metrics 的计算方式与奖励类似，但**没有权重、不乘 `dt`**，仅用于诊断（跟踪误差、接触力、能耗等）。聚合可选 mean、last、max、sum，写入 `Episode_Metrics/`。
+
+### 4.8 配置模板
+
+下列字典传入 `ManagerBasedRlEnvCfg`。键用于日志与互引。`func(env, **params)`；事件为 `func(env, env_ids, **params)`。
+
+```python
+observations = {
+    "actor": ObservationGroupCfg(
+        terms={
+            "base_ang_vel": ObservationTermCfg(
+                func=mdp.base_ang_vel,                    # -> [num_envs, D]
+                params={"asset_cfg": SceneEntityCfg("robot")},
+            ),
+            "command": ObservationTermCfg(
+                func=mdp.generated_commands,
+                params={"command_name": "twist"},         # commands 的键
+            ),
+        },
+        concatenate_terms=True,                           # False 则分项返回
+        enable_corruption=True,                           # False 关闭本组 noise
+    ),
+}
+
+actions = {
+    "joint_pos": JointPositionActionCfg(                  # 无 func，按注册顺序切分动作
+        entity_name="robot",                              # scene.entities 的键
+        actuator_names=(".*",),                           # 执行器名正则
+        scale=0.5,                                        # 先 scale 后 offset
+        use_default_offset=True,                          # 0 对应默认关节角
+    ),
+}
+
+rewards = {
+    "alive": RewardTermCfg(func=mdp.is_alive, weight=1.0),  # -> [num_envs]；负权重为惩罚
+    "joint_torques": RewardTermCfg(
+        func=mdp.joint_torques_l2, weight=-1e-4,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    ),
+}
+
+terminations = {
+    "time_out": TerminationTermCfg(func=mdp.time_out, time_out=True),  # True: truncated
+    "fell_over": TerminationTermCfg(
+        func=mdp.bad_orientation,
+        params={"limit_angle": 1.22},                     # rad；默认 terminated
+    ),
+}
+
+events = {
+    "reset_scene": EventTermCfg(func=mdp.reset_scene_to_default, mode="reset"),
+    "foot_friction": EventTermCfg(
+        func=dr.geom_friction, mode="startup",            # startup|reset|interval|step
+        params={"asset_cfg": SceneEntityCfg("robot", geom_names=[".*foot.*"]),
+                "ranges": (0.3, 1.2), "operation": "abs"},
+    ),
+    "push_robot": EventTermCfg(
+        func=mdp.push_by_setting_velocity, mode="interval",
+        interval_range_s=(1.0, 3.0),                      # 触发间隔（秒）
+        params={"velocity_range": {"x": (-0.5, 0.5), "y": (-0.5, 0.5)}},
+    ),
+}
+
+commands = {
+    "twist": UniformVelocityCommandCfg(                   # 须为 CommandTerm 子类
+        entity_name="robot",
+        resampling_time_range=(3.0, 8.0),                 # 重采样间隔（秒）；reset 必重采样
+        ranges=UniformVelocityCommandCfg.Ranges(
+            lin_vel_x=(-1.0, 1.0), lin_vel_y=(-1.0, 1.0), ang_vel_z=(-0.5, 0.5),
+        ),
+    ),
+}
+
+curriculum = {
+    "terrain_levels": CurriculumTermCfg(                  # 仅 reset 调用
+        func=mdp.terrain_levels_vel,
+        params={"command_name": "twist"},
+    ),
+}
+
+metrics = {
+    "base_height": MetricsTermCfg(
+        func=base_height,                                 # 同奖励形；无权重、不乘 dt
+        params={"asset_cfg": SceneEntityCfg("robot")},
+        reduce="mean",                                    # mean|last|max|sum
+    ),
+}
+```
 
 ---
 

@@ -791,6 +791,8 @@ tasks/velocity/
 └── config/g1/               # 调用工厂，再 patch
 ```
 
+三层分工：`mdp/*.py` 实现 `func`（由仿真状态计算张量）；`make_velocity_env_cfg()` 注册项、权重与 `params`；`config/<robot>/env_cfgs.py` 在工厂结果上改机型字段。各机型共用同一套 `mdp/`，不另建包。
+
 `env_cfgs.py` 的典型流程是 `cfg = make_velocity_env_cfg()`，随后只修改与硬件相关的字段。G1 速度任务中实际改写的对象包括：
 
 - `cfg.scene.entities["robot"]` ← `EntityCfg`（`asset_zoo` 或本地工厂）
@@ -884,7 +886,7 @@ scripts/play.py
 deploy/
 ```
 
-`src/assets` 对应第三部分的仿真层；`src/tasks` 对应第四部分的 manager 字典，不修改 `ManagerBasedRlEnv` 的步进顺序。`mdp/__init__.py` 先执行 `from mjlab.envs.mdp import *`，再导出本地 rewards、observations、commands。动作仍使用 `JointPositionActionCfg`，随机化仍使用 `mjlab.envs.mdp.dr`，PPO 仍使用 `mjlab.rl` 中的 dataclass。
+`src/assets` 对应第三部分的仿真层；`src/tasks` 对应第四部分的 manager 字典，不修改 `ManagerBasedRlEnv` 的步进顺序。`mdp/__init__.py` 先执行 `from mjlab.envs.mdp import *`，再导出本地 observations、rewards、commands。配置里的 `mdp.xxx` 是该合集：本仓库 `mdp/` 中能找到 `def xxx` 的为任务函数（如 `phase`），否则为 mjlab 再导出（如 `joint_pos_rel`）。`dr.*` 与部分项（如 `height_scan`）常单独导入。同一文件多次 `import … as mdp` 时后写覆盖先写，`func=` 绑定最后一次。动作仍使用 `JointPositionActionCfg`，随机化仍使用 `mjlab.envs.mdp.dr`，PPO 仍使用 `mjlab.rl` 中的 dataclass。
 
 任务发现采用第八部分的**显式 import**（可以没有 `mjlab.tasks` entry point）。注册示例：
 

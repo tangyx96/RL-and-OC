@@ -103,7 +103,7 @@ mjlab 提供刚体机器人学习所需的仿真与 MDP 基础设施，包括深
 
 ## 二、两层架构
 
-可将系统看成三个职责、由环境类连接的两层：MuJoCo Warp 只负责物理，`ManagerBasedRlEnv` 把原始状态翻译成 MDP，RSL-RL 只看到向量化环境接口。
+可将系统看成三个职责、由环境类连接的两层：MuJoCo Warp 只负责物理，`ManagerBasedRlEnv` 把原始状态翻译成 MDP；`MjlabOnPolicyRunner` 经由 `RslRlVecEnvWrapper` 以 `VecEnv` 接口驱动后者，运行 RSL-RL 的 on-policy 循环。
 
 ```
 MJCF / Python 配置
@@ -119,10 +119,13 @@ MJCF / Python 配置
    ManagerBasedRlEnv  （管理器层：观测、奖励、事件等）
         │
         ▼
-   RSL-RL（PPO 等）
+   RslRlVecEnvWrapper（适配为 VecEnv）
+        │
+        ▼
+   MjlabOnPolicyRunner（RSL-RL 的 on-policy 循环）
 ```
 
-上图自上而下对应四个阶段。
+上图自上而下对应四个阶段；介于管理器层与 runner 之间的 `RslRlVecEnvWrapper` 仅作接口适配，不单列为一阶段。
 
 **（1）物理世界的构建（CPU，仅初始化）。** MJCF 或 Python 给出机器人与场景；Entity 拼成 `MjSpec`，再编译为只读 `MjModel`（质量、惯性、几何、运动学树）。此阶段不进入训练循环。
 
@@ -130,7 +133,7 @@ MJCF / Python 配置
 
 **（3）MDP 封装。** 物理输出的是关节角、速度等底层量。`ManagerBasedRlEnv` 用观测、奖励、终止、事件等管理器把它们变成算法所需的张量——例如用前进距离作奖励、用倾覆作终止。term 如何书写见第四部分。
 
-**（4）策略更新。** RSL-RL 接收上述批量数据，运行 PPO 等算法，再把新动作经管理器写回第（2）阶段。与 runner、wrapper 的接口见第六部分。
+**（4）策略更新。** `MjlabOnPolicyRunner` 接收包装后的 `VecEnv`，调用继承自 RSL-RL `OnPolicyRunner` 的 `learn()`，采集轨迹并更新策略，再把新动作经管理器写回第（2）阶段。细节见第六部分。
 
 训练主循环是（2）→（3）→（4）→（2）。配置、编译与上传只做一次。三个模块的数据都以 batch 形式留在 GPU 显存，避免逐步把状态拷回 CPU；这是吞吐的主要来源。
 
@@ -496,11 +499,12 @@ step 与 interval 事件在 reset **之前**作用于终止前的状态；随后
 
 ### 6.1 与 RSL-RL 的衔接
 
-训练侧默认使用 RSL-RL，衔接包括三部分。
+训练侧默认使用 RSL-RL，衔接包括四部分。
 
 1. **任务注册表。** 每个任务对应一对配置：`ManagerBasedRlEnvCfg` 与 `RslRlOnPolicyRunnerCfg`。`register_mjlab_task` 用字符串 id 绑定二者，并另存 `play_env_cfg`（关闭训练用随机化、延长回合）供评估。官方内置任务多用 `Mjlab-{Category}-{Terrain}-{Robot}`。可选参数 `runner_cls` 默认为 `MjlabOnPolicyRunner`；需要在保存 checkpoint 时导出 ONNX 时再换成自定义子类（见第九部分）。
-2. **`RslRlVecEnvWrapper`。** 将观测字典转换为 RSL-RL 的 TensorDict；合并 `terminated` 与 `truncated` 为 `dones`，并将超时写入 `extras` 以便正确自举；可按配置裁剪动作。构造时调用 `env.reset()`，因为 RSL-RL 在收集 rollout 前不自行 reset。自备 `train.py` 时，仍是先构造 `ManagerBasedRlEnv`，再包装该层，然后交给 runner。
-3. **配置 dataclass。** `RslRlOnPolicyRunnerCfg` 是 mjlab 对 RSL-RL `OnPolicyRunner` 的封装，由 `load_rl_cfg` 按 task id 取出，CLI 前缀为 `--agent`。它不描述物理或 MDP；并行环境数属于 `env.scene.num_envs`（`--num-envs`）。字段很多，下列只说明读配置时必须分清的三块；其余以 `train <task> --help` 与官方 *Training with RSL-RL* 为准。
+2. **`RslRlVecEnvWrapper`。** `ManagerBasedRlEnv` 沿用 Gymnasium 式的 `reset` / `step` 约定，RSL-RL 的 runner 则只接受其 `VecEnv` 接口。该包装器继承 `VecEnv`，对已构造的 `ManagerBasedRlEnv` 作协议转换：内层仍负责物理与 MDP，外层向算法暴露向量化环境。转换包括将观测字典变为 RSL-RL 所用的 TensorDict，将 `terminated` 与 `truncated` 合并为 `dones`，并把超时写入 `extras` 以便正确自举；亦可按配置裁剪动作。构造时调用 `env.reset()`，因为 RSL-RL 在收集 rollout 前不自行 reset。自备 `train.py` 时，仍是先构造 `ManagerBasedRlEnv`，再包装该层，然后交给 runner。
+3. **`MjlabOnPolicyRunner`。** 继承 RSL-RL 的 `OnPolicyRunner`。构造时接收已包装的 `VecEnv`、训练配置字典、日志目录与设备；训练入口为父类的 `learn()`，负责轨迹采集、策略更新与保存。mjlab 子类主要扩展 checkpoint 中的环境状态存取及 ONNX 导出，并不另实现 PPO。
+4. **配置 dataclass。** `RslRlOnPolicyRunnerCfg` 给出 runner 所用的超参数，由 `load_rl_cfg` 按 task id 取出，CLI 前缀为 `--agent`。它不描述物理或 MDP；并行环境数属于 `env.scene.num_envs`（`--num-envs`）。字段很多，下列只说明读配置时必须分清的三块；其余以 `train <task> --help` 与官方 *Training with RSL-RL* 为准。
 
 **网络（`actor` / `critic`，类型为 `RslRlModelCfg`）。** 输入维由观测维决定，输出维由动作维或标量价值决定，均不在此填写。`hidden_dims` 给出全连接隐层的宽度序列：`(512, 256, 128)` 表示三层，宽分别为 512、256、128。`activation` 是这些隐层之间的逐元非线性（G1 速度任务常用 `"elu"`），一般不加在输出头上。actor 与 critic 可取不同宽度。
 
@@ -697,7 +701,7 @@ src/mjlab/
 
 1. **entry point。** import `mjlab` 时，`_import_registered_packages()` 加载组 **`mjlab.tasks`**，从而导入应用包。ANYmal 示例采用该方式。
 2. **显式 import。** 训练脚本执行 `import mjlab.tasks` 与 `import src.tasks`。后者通过 `mjlab.utils.lab_api.tasks.importer.import_packages` 递归导入含子包的目录；各机器人配置包的 `__init__.py` 调用 `register_mjlab_task`。中间目录必须包含 `__init__.py`，且应将纯工具包（如 `.mdp`）列入黑名单，以免将 term 模块当作任务包导入。
-3. `train` / `play` 按 task id 调用 `load_env_cfg`、`load_rl_cfg`、`load_runner_cls`，构造 `ManagerBasedRlEnv`，再包装 `RslRlVecEnvWrapper`。
+3. `train` / `play` 按 task id 调用 `load_env_cfg`、`load_rl_cfg`、`load_runner_cls`，构造 `ManagerBasedRlEnv`，再包装 `RslRlVecEnvWrapper`；`train` 随即实例化 runner 并调用 `learn()`。
 
 未调用 `register_mjlab_task` 的任务不会出现在 CLI 中。可用下列命令检查：
 
@@ -911,6 +915,6 @@ id 使用 `Unitree-` 等前缀，避免与官方 `Mjlab-` 冲突。该仓库在�
 
 ### 9.3 训练入口
 
-`scripts/train.py` 先 `import src.tasks`，再 `load_env_cfg`、构造 `ManagerBasedRlEnv`、包装 `RslRlVecEnvWrapper`、交给 runner。并行规模常写成 `--env.scene.num-envs=4096`（与官方 `--num-envs` 等价）。`play.py` 直接构造 `NativeMujocoViewer` 或 `ViserPlayViewer`，不另实现可视化后端。
+`scripts/train.py` 先 `import src.tasks`，再 `load_env_cfg`、构造 `ManagerBasedRlEnv`、包装 `RslRlVecEnvWrapper`，交给 `MjlabOnPolicyRunner`（或注册的 `runner_cls`）并调用 `learn()`。并行规模常写成 `--env.scene.num-envs=4096`（与官方 `--num-envs` 等价）。`play.py` 直接构造 `NativeMujocoViewer` 或 `ViserPlayViewer`，不另实现可视化后端。
 
 确认 `policy.onnx` 已写出后，再进入 `deploy/`；此后进程不再调用 mjlab。

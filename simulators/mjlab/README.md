@@ -4,6 +4,6 @@
 
 | Notes | Content |
 |-------|---------|
-| [`notes/mjlab-introduction.md`](notes/mjlab-introduction.md) | 导读：定位与架构、仿真层与管理器层、生命周期、训练入口、实现路径；第九部分为 unitree_rl_mjlab |
+| [`mjlab-introduction.md`](mjlab-introduction.md) | 导读：定位与架构、仿真层与管理器层、生命周期、训练入口、实现路径；第九部分为 unitree_rl_mjlab |
 
-应用层示例：[unitree_rl_mjlab](https://github.com/tangyx96/unitree_rl_mjlab)。官方文档：[mujocolab.github.io/mjlab](https://mujocolab.github.io/mjlab/main/index.html)。
+应用层示例：[unitree_rl_mjlab](https://github.com/tangyx96/unitree_rl_mjlab)。官方文档：[mujocolab.github.io/mjlab](https://mujocolab.github.io/mjlab/main/index.html)。训练算法侧见 [`../rsl_rl/`](../rsl_rl/)。

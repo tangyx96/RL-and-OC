@@ -499,7 +499,7 @@ step 与 interval 事件在 reset **之前**作用于终止前的状态；随后
 
 ### 6.1 与 RSL-RL 的衔接
 
-训练侧默认使用 RSL-RL，衔接包括四部分。
+训练侧默认使用 RSL-RL，衔接包括四部分。库本身的 Runner / PPO / `obs_groups` 见 [`rsl-rl-introduction.md`](../rsl_rl/rsl-rl-introduction.md)；下文只写 mjlab 如何接到该接口。
 
 1. **任务注册表。** 每个任务对应一对配置：`ManagerBasedRlEnvCfg` 与 `RslRlOnPolicyRunnerCfg`。`register_mjlab_task` 用字符串 id 绑定二者，并另存 `play_env_cfg`（关闭训练用随机化、延长回合）供评估。官方内置任务多用 `Mjlab-{Category}-{Terrain}-{Robot}`。可选参数 `runner_cls` 默认为 `MjlabOnPolicyRunner`；需要在保存 checkpoint 时导出 ONNX 时再换成自定义子类（见第九部分）。
 2. **`RslRlVecEnvWrapper`。** `ManagerBasedRlEnv` 沿用 Gymnasium 式的 `reset` / `step` 约定，RSL-RL 的 runner 则只接受其 `VecEnv` 接口。该包装器继承 `VecEnv`，对已构造的 `ManagerBasedRlEnv` 作协议转换：内层仍负责物理与 MDP，外层向算法暴露向量化环境。转换包括将观测字典变为 RSL-RL 所用的 TensorDict，将 `terminated` 与 `truncated` 合并为 `dones`，并把超时写入 `extras` 以便正确自举；亦可按配置裁剪动作。构造时调用 `env.reset()`，因为 RSL-RL 在收集 rollout 前不自行 reset。自备 `train.py` 时，仍是先构造 `ManagerBasedRlEnv`，再包装该层，然后交给 runner。

@@ -1,6 +1,6 @@
 # RSL-RL 导读
 
-本文面向尚未使用 RSL-RL 的读者，说明其问题定位、组件分层、环境接口、PPO / 蒸馏循环，以及与 mjlab、Isaac Lab 一类仿真栈的衔接。技术细节以官方文档 [leggedrobotics.github.io/rsl_rl](https://leggedrobotics.github.io/rsl_rl/) 与仓库 [leggedrobotics/rsl_rl](https://github.com/leggedrobotics/rsl_rl) 为准。仿真与 MDP 编排不在本库内；mjlab 一侧见 [`mjlab-introduction.md`](../mjlab/mjlab-introduction.md) 第六部分。PPO 公式推导见 [`clean-rl/ppo_notes.md`](../../clean-rl/ppo_notes.md)。
+本文面向尚未使用 RSL-RL 的读者，说明其问题定位、组件分层、环境接口、PPO / 蒸馏循环，以及与 mjlab、Isaac Lab 一类仿真栈的衔接。技术细节以官方文档 [leggedrobotics.github.io/rsl_rl](https://leggedrobotics.github.io/rsl_rl/) 与仓库 [leggedrobotics/rsl_rl](https://github.com/leggedrobotics/rsl_rl) 为准。仿真与 MDP 编排不在本库内；mjlab 一侧见 [`mjlab-introduction.md`](../mjlab/mjlab-introduction.md) 第六部分。PPO 公式推导见 [`policy-learning/ppo_notes.md`](../../policy-learning/ppo_notes.md)。
 
 ## 笔记如何组织
 
@@ -226,7 +226,7 @@ Logger 默认 TensorBoard。W&B / Neptune 在 runner 配置的 `logger` 字典�
 
 `PPO.act` 用当前 actor 随机采样动作，同时记下 log-prob、分布参数、critic 价值与（若有）RNN 隐状态。`process_env_step` 更新观测归一化，写入 reward / done，并处理超时与 RND。`compute_returns` 反序算 GAE。`update` 在新策略上重算 log-prob，做 PPO 裁剪更新。
 
-与 [`ppo_notes.md`](../../clean-rl/ppo_notes.md) 中的目标一致。实现上需单独记住下列机器人场景中的处理。
+与 [`ppo_notes.md`](../../policy-learning/ppo_notes.md) 中的目标一致。实现上需单独记住下列机器人场景中的处理。
 
 ### 5.2 超时自举
 
@@ -427,7 +427,7 @@ PPO
 3. [Configuration](https://leggedrobotics.github.io/rsl_rl/guide/configuration.html) 与第七部分
 4. 源码：`runners/on_policy_runner.py` 的 `learn()`，然后 `algorithms/ppo.py` 的 `act` / `process_env_step` / `compute_returns` / `update`
 5. 仿真侧：[mjlab 训练一节](../mjlab/mjlab-introduction.md)；Isaac Lab 文档中的 RSL-RL 包装
-6. 公式对照：[PPO 笔记](../../clean-rl/ppo_notes.md)
+6. 公式对照：[PPO 笔记](../../policy-learning/ppo_notes.md)
 
 论文：Schwarke, Mittal, Rudin, Hoeller, Hutter, *RSL-RL: A Learning Library for Robotics Research*, [arXiv:2509.10771](https://arxiv.org/abs/2509.10771), 2025。在 mjlab / Isaac Lab 上发结果时，应同时引用该文与仿真栈各自的论文。
 

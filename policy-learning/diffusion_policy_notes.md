@@ -42,15 +42,108 @@ $$
 
 ### 2.2 行为克隆
 
-设演示数据集 $\mathcal{D} = \{(\mathbf{o}_i, \mathbf{a}_i)\}_{i=1}^N$。确定性行为克隆最小化
+设演示 $\mathcal{D} = \{(\mathbf{o}_i, \mathbf{a}_i)\}_{i=1}^N$ 独立取自专家联合分布 $p^{\ast}(\mathbf{o},\mathbf{a})$。将策略参数化为条件密度 $\pi_\theta(\mathbf{a}\mid\mathbf{o})$。观测的边缘 $p^{\ast}(\mathbf{o})$ 不依赖 $\theta$，故 $\mathcal{D}$ 在模型下的似然为
 
 $$
-\mathcal{L}_{\mathrm{BC}}(\theta) = \mathbb{E}_{(\mathbf{o}, \mathbf{a}) \sim \mathcal{D}} \left[ \left\| \pi_\theta(\mathbf{o}) - \mathbf{a} \right\|^2 \right].
+p_\theta(\mathcal{D})=\prod_{i=1}^N\pi_\theta(\mathbf{a}_i\mid\mathbf{o}_i).
 $$
 
-概率形式为最大化对数似然 $\mathbb{E}[-\log \pi_\theta(\mathbf{a} \mid \mathbf{o})]$。BC 实现简单，但存在**协变量偏移**（covariate shift）：训练分布为专家访问的状态，部署时策略自身的误差使状态分布偏移，误差随时间累积。
+极大似然估计选取使该似然最大的参数，
 
-对同一观测存在多种合理动作时（例如绕障路径），平方损失收敛到条件期望 $\mathbb{E}[\mathbf{a} \mid \mathbf{o}]$，产生动作平均化（averaging），在多模态任务上性能下降明显。
+$$
+\hat\theta_{\mathrm{MLE}}=\arg\max_\theta\, p_\theta(\mathcal{D}).
+$$
+
+$\log$ 在 $(0,\infty)$ 上严格递增，因而 $p_\theta(\mathcal{D})$ 与 $\log p_\theta(\mathcal{D})$ 的最大值点相同：
+
+$$
+\hat\theta_{\mathrm{MLE}}=\arg\max_\theta\log p_\theta(\mathcal{D}).
+$$
+
+由独立抽样，
+
+$$
+\log p_\theta(\mathcal{D})
+=\sum_{i=1}^N\log\pi_\theta(\mathbf{a}_i\mid\mathbf{o}_i).
+$$
+
+对任意 $c>0$，$\arg\max_\theta f(\theta)=\arg\max_\theta\, c\,f(\theta)$。取 $c=1/N$，上式与样本均值同最优。将 $\mathcal{D}$ 视为经验分布 $\hat p_{\mathcal{D}}=\frac{1}{N}\sum_{i=1}^{N}\delta_{(\mathbf{o}_i,\mathbf{a}_i)}$，该均值即经验期望，故
+
+$$
+\hat\theta_{\mathrm{MLE}}
+=\arg\max_\theta\sum_{i=1}^N\log\pi_\theta(\mathbf{a}_i\mid\mathbf{o}_i)
+=\arg\max_\theta\;
+\mathbb{E}_{(\mathbf{o},\mathbf{a})\sim\mathcal{D}}\big[\log\pi_\theta(\mathbf{a}\mid\mathbf{o})\big].
+$$
+
+记号 $\mathbb{E}_{(\mathbf{o},\mathbf{a})\sim\mathcal{D}}$ 表示对 $\mathcal{D}$ 中 $N$ 个样本的算术平均；$N\to\infty$ 时依大数定律收敛到 $\mathbb{E}_{p^{\ast}}[\log\pi_\theta]$。训练中通常改为最小化负对数似然
+
+$$
+\mathcal{L}_{\mathrm{NLL}}(\theta)
+=\mathbb{E}_{(\mathbf{o},\mathbf{a})\sim\mathcal{D}}\big[-\log\pi_\theta(\mathbf{a}\mid\mathbf{o})\big],
+$$
+
+它与 $\max_\theta p_\theta(\mathcal{D})$ 仅差符号。
+
+同一目标可写成条件正向 KL。对固定 $\mathbf{o}$，
+
+$$
+D_{\mathrm{KL}}\big(p^{\ast}(\cdot\mid\mathbf{o})\,\big\|\,\pi_\theta(\cdot\mid\mathbf{o})\big)
+=\int p^{\ast}(\mathbf{a}\mid\mathbf{o})\,
+\log\frac{p^{\ast}(\mathbf{a}\mid\mathbf{o})}{\pi_\theta(\mathbf{a}\mid\mathbf{o})}\,
+\mathrm{d}\mathbf{a}.
+$$
+
+由 $\log(u/v)=\log u-\log v$，
+
+$$
+\begin{aligned}
+D_{\mathrm{KL}}
+&=\int p^{\ast}(\mathbf{a}\mid\mathbf{o})\log p^{\ast}(\mathbf{a}\mid\mathbf{o})\,\mathrm{d}\mathbf{a}
+-\int p^{\ast}(\mathbf{a}\mid\mathbf{o})\log\pi_{\theta}(\mathbf{a}\mid\mathbf{o})\,\mathrm{d}\mathbf{a}\\
+&=\mathbb{E}_{p^{\ast}(\cdot\mid\mathbf{o})}\big[\log p^{\ast}(\mathbf{a}\mid\mathbf{o})\big]
+-\mathbb{E}_{p^{\ast}(\cdot\mid\mathbf{o})}\big[\log\pi_{\theta}(\mathbf{a}\mid\mathbf{o})\big].
+\end{aligned}
+$$
+
+第一项不依赖 $\theta$。因此
+
+$$
+\arg\min_\theta\,
+D_{\mathrm{KL}}\big(p^{\ast}(\cdot\mid\mathbf{o})\,\big\|\,\pi_\theta(\cdot\mid\mathbf{o})\big)
+=\arg\max_\theta\,
+\mathbb{E}_{p^{\ast}(\cdot\mid\mathbf{o})}\big[\log\pi_\theta(\mathbf{a}\mid\mathbf{o})\big].
+$$
+
+再对 $p^{\ast}(\mathbf{o})$ 取期望，
+
+$$
+\mathbb{E}_{\mathbf{o}\sim p^{\ast}}\Big[
+D_{\mathrm{KL}}\big(p^{\ast}(\cdot\mid\mathbf{o})\,\big\|\,\pi_\theta(\cdot\mid\mathbf{o})\big)
+\Big]
+=C+\mathbb{E}_{(\mathbf{o},\mathbf{a})\sim p^{\ast}}\big[-\log\pi_\theta(\mathbf{a}\mid\mathbf{o})\big],
+$$
+
+其中 $C$ 与 $\theta$ 无关。用经验分布代替 $p^{\ast}$ 即得 $\mathcal{L}_{\mathrm{NLL}}$。故极大似然等价于在专家占用上最小化 $D_{\mathrm{KL}}(p^{\ast}(\cdot\mid\mathbf{o})\,\|\,\pi_\theta(\cdot\mid\mathbf{o}))$。
+
+若进一步取 $\pi_\theta(\mathbf{a}\mid\mathbf{o})=\mathcal{N}(\mu_\theta(\mathbf{o}),\sigma^{2}I)$ 且 $\sigma$ 不作为可学习参数，则
+
+$$
+-\log\pi_\theta(\mathbf{a}\mid\mathbf{o})
+=\frac{1}{2\sigma^{2}}\|\mathbf{a}-\mu_\theta(\mathbf{o})\|^{2}
++\frac{d}{2}\log(2\pi\sigma^{2}).
+$$
+
+第二项与 $\theta$ 无关，于是 $\mathcal{L}_{\mathrm{NLL}}$ 与最小二乘
+
+$$
+\mathcal{L}_{\mathrm{BC}}(\theta)
+=\mathbb{E}_{(\mathbf{o},\mathbf{a})\sim\mathcal{D}}\big[\|\mu_\theta(\mathbf{o})-\mathbf{a}\|^{2}\big]
+$$
+
+同最优。确定性回归 BC 即此特例：网络输出条件均值。GMM、能量模型与扩散策略不满足该高斯假设，仍以 $\mathcal{L}_{\mathrm{NLL}}$ 或其等价形式（去噪、score matching）为训练目标。
+
+该方法实现简单，但训练分布为专家占用，部署时策略误差使状态分布偏移，误差沿时间累积（covariate shift）。若同一 $\mathbf{o}$ 对应多种合理动作，$\mathcal{L}_{\mathrm{BC}}$ 收敛到 $\mathbb{E}[\mathbf{a}\mid\mathbf{o}]$，动作被平均化，多模态任务上性能下降。与 PPO 中加权 $\nabla_\theta\log\pi_\theta$ 不同：此处对数似然本身即目标，权重恒为 1，数据来自专家而非当前策略。
 
 ### 2.3 现有模仿学习方法的局限
 
@@ -66,32 +159,109 @@ Diffusion Policy 的出发点，是将 DDPM 在图像生成中已验证的性质
 
 ### 2.4 DDPM 的基本框架
 
-Denoising Diffusion Probabilistic Model（Ho et al., 2020）包含两个过程：
+目标是拟合高维、多峰的数据分布 $q(x_0)$ 并从中抽样。该分布无闭式密度，映射 $x=f_{\theta}(z)$、$z\sim\mathcal{N}(0,I)$ 在多峰上易平均化且训练不稳。DDPM（Ho et al., 2020）将生成分解为多步：以不含可学习参数的前向核将边缘 $q(x_0)$ 逐步变换为 $q(x_K)\approx\mathcal{N}(0,I)$，再学习其逐步逆。前向核固定，$x_k$ 中的噪声由重参数化显式给出，训练目标化为对 $\epsilon$ 的回归；生成分布由反向核 $p_{\theta}$ 定义。$\beta_k$ 较小时每步扰动很小，逆核可用高斯逼近。
 
-1. **前向扩散**：向数据逐步加噪，直至近似标准高斯；
-2. **反向去噪**：学习从噪声恢复数据的马尔可夫链。
+记 $x_0$ 为数据，$x_k$ 为第 $k$ 步状态（$k=1,\ldots,K$）。$k$ 增大则噪声增强，$k$ 减小则噪声减弱：
 
-设 $x_0$ 为数据，$x_k$ 为第 $k$ 步加噪结果（$k = 1, \ldots, K$）。前向过程定义为
+```text
+前向（加噪，核 q）：  x_0 → x_1 → ⋯ → x_K ≈ N(0, I)
+反向（去噪，核 p_θ）： x_K → x_{K-1} → ⋯ → x_0
+```
 
-$$
-q(x_k \mid x_{k-1}) = \mathcal{N}\!\left(x_k;\, \sqrt{\alpha_k}\, x_{k-1},\, \beta_k \mathbf{I}\right),
-\qquad \alpha_k = 1 - \beta_k,
-$$
+#### 前向过程
 
-其中 $\{\beta_k\}_{k=1}^K$ 为预先给定的噪声日程（noise schedule）。定义 $\bar{\alpha}_k = \prod_{s=1}^{k} \alpha_s$，则 $x_k$ 可由 $x_0$ 一步采样：
-
-$$
-q(x_k \mid x_0) = \mathcal{N}\!\left(x_k;\, \sqrt{\bar{\alpha}_k}\, x_0,\, (1 - \bar{\alpha}_k)\mathbf{I}\right).
-$$
-
-等价地，重参数化形式为
+每步将 $x_{k-1}$ 收缩并加入高斯噪声：
 
 $$
-x_k = \sqrt{\bar{\alpha}_k}\, x_0 + \sqrt{1 - \bar{\alpha}_k}\, \epsilon,
+q(x_k \mid x_{k-1}) = \mathcal{N}\!\left(x_k;\, \sqrt{\alpha_{k}}\, x_{k-1},\, \beta_{k} \mathbf{I}\right),
+\qquad \alpha_{k} = 1 - \beta_{k},
+$$
+
+其中 $\{\beta_{k}\}_{k=1}^{K}$ 为预先给定的噪声日程。各向同性高斯 $\mathcal{N}(x;\mu,\sigma^{2}I)$ 的密度为
+
+$$
+(2\pi\sigma^{2})^{-d/2}\exp\!\left(-\frac{\|x-\mu\|^{2}}{2\sigma^{2}}\right),
+$$
+
+故
+
+$$
+q(x_k \mid x_{k-1})
+=(2\pi\beta_{k})^{-d/2}
+\exp\!\left(
+-\frac{\|x_k-\sqrt{\alpha_{k}}\,x_{k-1}\|^{2}}{2\beta_{k}}
+\right).
+$$
+
+均值 $\sqrt{\alpha_{k}}\,x_{k-1}$ 将信号按 $\sqrt{\alpha_{k}}<1$ 收缩，协方差 $\beta_{k}I$ 注入噪声。重参数化为
+
+$$
+x_k=\sqrt{\alpha_{k}}\,x_{k-1}+\sqrt{\beta_{k}}\,\epsilon_{k},
+\qquad \epsilon_{k}\sim\mathcal{N}(0,I).
+$$
+
+定义 $\bar{\alpha}_{k}=\prod_{s=1}^{k}\alpha_{s}$。从 $x_0$ 迭代并合并独立高斯，方差累加为 $1-\bar{\alpha}_{k}$，得到一步边际
+
+$$
+q(x_k \mid x_0) = \mathcal{N}\!\left(x_k;\, \sqrt{\bar{\alpha}_{k}}\, x_0,\, (1 - \bar{\alpha}_{k})\mathbf{I}\right),
+$$
+
+即
+
+$$
+x_k = \sqrt{\bar{\alpha}_{k}}\, x_0 + \sqrt{1 - \bar{\alpha}_{k}}\, \epsilon,
 \qquad \epsilon \sim \mathcal{N}(0, \mathbf{I}).
 $$
 
-反向过程学习 $p_\theta(x_{k-1} \mid x_k)$，从 $x_K \sim \mathcal{N}(0, \mathbf{I})$ 出发逐步去噪得到 $x_0$。
+$k=K$ 且 $\bar\alpha_K\approx 0$ 时，$x_K$ 近似 $\mathcal{N}(0,I)$。
+
+#### 反向过程
+
+生成从 $x_K\sim\mathcal{N}(0,I)$ 出发，沿 $k=K,\ldots,1$ 逐步降低噪声。真反向核为
+
+$$
+q(x_{k-1}\mid x_k)
+=\int q(x_{k-1}\mid x_k,x_0)\,q(x_0\mid x_k)\,\mathrm{d}x_0.
+$$
+
+$q(x_{k-1}\mid x_k,x_0)$ 为高斯且有闭式，$q(x_0\mid x_k)$ 未知，积分不可直接计算。$\beta_k$ 较小时该核接近高斯，故学习
+
+$$
+p_{\theta}(x_{k-1}\mid x_k)
+=\mathcal{N}\!\big(x_{k-1};\,\mu_{\theta}(x_k,k),\,\sigma_k^{2}I\big),
+$$
+
+$\sigma_k^{2}$ 取 $\beta_k$ 或后验方差 $\tilde\beta_k$，不由网络输出。反向链为
+
+$$
+p_{\theta}(x_{0:K})
+=p(x_K)\prod_{k=1}^{K}p_{\theta}(x_{k-1}\mid x_k),
+\qquad
+p(x_K)=\mathcal{N}(0,I).
+$$
+
+由前向一步边际解出 $x_0=\frac{1}{\sqrt{\bar\alpha_k}}(x_k-\sqrt{1-\bar\alpha_k}\,\epsilon)$，代入 $q(x_{k-1}\mid x_k,x_0)$ 的均值，得到
+
+$$
+\tilde\mu_k(x_k,\epsilon)
+=\frac{1}{\sqrt{\alpha_k}}\left(x_k-\frac{\beta_k}{\sqrt{1-\bar\alpha_k}}\,\epsilon\right).
+$$
+
+网络 $\epsilon_{\theta}(x_k,k)$ 预测 $\epsilon$，均值取同一形式：
+
+$$
+\mu_{\theta}(x_k,k)
+=\frac{1}{\sqrt{\alpha_k}}\left(x_k-\frac{\beta_k}{\sqrt{1-\bar\alpha_k}}\,\epsilon_{\theta}(x_k,k)\right).
+$$
+
+与前向 $x_k=\sqrt{\alpha_k}\,x_{k-1}+\sqrt{\beta_k}\,\epsilon_k$ 相对：此处从 $x_k$ 减去估计噪声并除以 $\sqrt{\alpha_k}$，得到更干净的 $x_{k-1}$。一步采样
+
+$$
+x_{k-1}=\mu_{\theta}(x_k,k)+\sigma_k z,
+\qquad z\sim\mathcal{N}(0,I)
+$$
+
+（$k=1$ 时常取 $z=0$）。推理对 $k=K,\ldots,1$ 重复该步，输出 $x_0$。训练不展开反向链：用前向公式由 $(x_0,\epsilon,k)$ 构造 $x_k$，监督 $\epsilon_{\theta}(x_k,k)\approx\epsilon$。
 
 ---
 
@@ -130,13 +300,15 @@ $$
 
 ### 3.3 反向去噪
 
-记 $\mathbf{A}^0 \equiv \mathbf{A}_t$ 为干净动作序列，$\mathbf{A}^k$ 为第 $k$ 步加噪版本。反向一步写为
+记 $\mathbf{A}^{0}\equiv\mathbf{A}_t$ 为干净动作序列，$\mathbf{A}^{k}$ 为第 $k$ 步加噪版本。反向核仍取高斯，噪声网络以观测为条件：$\epsilon_{\theta}(\mathbf{O}_t,\mathbf{A}^{k},k)$。一步写为
 
 $$
-\mathbf{A}^{k-1} = \alpha_k \left(\mathbf{A}^k - \gamma_k\, \epsilon_\theta(\mathbf{O}_t, \mathbf{A}^k, k)\right) + \mathcal{N}(0, \sigma_k^2 \mathbf{I}),
+\mathbf{A}^{k-1}
+=\alpha_k\big(\mathbf{A}^{k}-\gamma_k\,\epsilon_{\theta}(\mathbf{O}_t,\mathbf{A}^{k},k)\big)
++\mathcal{N}(0,\sigma_k^{2}I),
 $$
 
-其中 $\epsilon_\theta$ 为噪声预测网络，$\alpha_k, \gamma_k, \sigma_k$ 由噪声 schedule 确定（与 DDPM 一致）。推理时从 $\mathbf{A}^K \sim \mathcal{N}(0, \mathbf{I})$ 出发，迭代 $k = K, K-1, \ldots, 1$，得到 $\mathbf{A}^0$，取 $\mathbf{A}^0[0:T_a]$ 执行。
+其中 $\alpha_k,\gamma_k,\sigma_k$ 由噪声日程确定，与 $\mu_{\theta}$ 中的 $\alpha_k$、$\beta_k/\sqrt{1-\bar\alpha_k}$ 一致。从 $\mathbf{A}^{K}\sim\mathcal{N}(0,I)$ 迭代 $k=K,\ldots,1$ 得到 $\mathbf{A}^{0}$，取 $\mathbf{A}^{0}[0:T_a]$ 执行。
 
 ### 3.4 Receding horizon 与 warm-start
 

@@ -7,11 +7,11 @@
 | [`bertsekas-rl-oc/`](bertsekas-rl-oc/) | Bertsekas, *Reinforcement Learning and Optimal Control*（2019 draft） | [`study-notes/`](bertsekas-rl-oc/study-notes/) |
 | [`zero-order-robotics/`](zero-order-robotics/) | Jordana 等, *Zero-Order Optimization*（[arXiv:2506.22087](https://arxiv.org/abs/2506.22087)） | [`study-notes/`](zero-order-robotics/study-notes/) |
 | [`sqp-oc/`](sqp-oc/) | Jordana SQP/MPC 系列；Chakravorty（[arXiv:2510.03475](https://arxiv.org/abs/2510.03475)） | [`control-optimization-sqp-synthesis.md`](sqp-oc/study-notes/control-optimization-sqp-synthesis.md) |
-| [`policy-learning/`](policy-learning/) | PPO / SAC / FlashSAC；Diffusion Policy；WAM | [`ppo_notes.md`](policy-learning/ppo_notes.md)、[`sac_notes.md`](policy-learning/sac_notes.md)、[`flashsac_notes.md`](policy-learning/flashsac_notes.md)、[`diffusion_policy_notes.md`](policy-learning/diffusion_policy_notes.md)、[`wam_notes.md`](policy-learning/wam_notes.md) |
+| [`policy-learning/`](policy-learning/) | PPO / SAC / FlashSAC；Diffusion Policy；VLA；WAM | [`ppo_notes.md`](policy-learning/ppo_notes.md)、[`sac_notes.md`](policy-learning/sac_notes.md)、[`flashsac_notes.md`](policy-learning/flashsac_notes.md)、[`diffusion_policy_notes.md`](policy-learning/diffusion_policy_notes.md)、[`openvla_notes.md`](policy-learning/openvla_notes.md)、[`wam_notes.md`](policy-learning/wam_notes.md) |
 | [`simulators/mjlab/`](simulators/mjlab/) | mjlab（[arXiv:2601.22074](https://arxiv.org/abs/2601.22074)）；应用层对照 [unitree_rl_mjlab](https://github.com/tangyx96/unitree_rl_mjlab) | [`mjlab-introduction.md`](simulators/mjlab/mjlab-introduction.md) |
 | [`simulators/rsl_rl/`](simulators/rsl_rl/) | RSL-RL（[arXiv:2509.10771](https://arxiv.org/abs/2509.10771)）；Isaac Lab / mjlab 的默认 on-policy 后端 | [`rsl-rl-introduction.md`](simulators/rsl_rl/rsl-rl-introduction.md) |
 
-Bertsekas 提供 Bellman / MPC / 策略梯度骨架；Zero-Order 用随机搜索统一 TO 与 RL；SQP 组用数值优化统一 iLQR、DDP 与结构利用型 QP；`policy-learning/` 把策略梯度、off-policy Actor-Critic 与模仿学习（Diffusion Policy、WAM）落到推导上；`simulators/` 按仿真器与训练库归档；其中 `mjlab/` 对应 GPU 并行仿真上的 manager-based 机器人 RL 环境，`rsl_rl/` 对应接到这些环境上的 on-policy 训练循环。
+Bertsekas 提供 Bellman / MPC / 策略梯度骨架；Zero-Order 用随机搜索统一 TO 与 RL；SQP 组用数值优化统一 iLQR、DDP 与结构利用型 QP；`policy-learning/` 把策略梯度、off-policy Actor-Critic 与模仿学习（Diffusion Policy、VLA、WAM）落到推导上；`simulators/` 按仿真器与训练库归档；其中 `mjlab/` 对应 GPU 并行仿真上的 manager-based 机器人 RL 环境，`rsl_rl/` 对应接到这些环境上的 on-policy 训练循环。
 
 版权在原书 / 原论文，仅供个人学习。
 

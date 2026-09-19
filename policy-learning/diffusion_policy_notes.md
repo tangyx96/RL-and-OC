@@ -1,7 +1,6 @@
 # Diffusion Policy 算法笔记
 
-下文公式与流程对应的实现，见官方仓库 [real-stanford/diffusion_policy](https://github.com/real-stanford/diffusion_policy)（Chi et al., RSS 2023；[arXiv:2303.04137](https://arxiv.org/pdf/2303.04137v5)）。  
-与在线 RL 方法的对比，见 [`ppo_notes.md`](ppo_notes.md)。
+下文公式与流程对应的实现，见官方仓库 [real-stanford/diffusion_policy](https://github.com/real-stanford/diffusion_policy)（Chi et al., RSS 2023；[arXiv:2303.04137](https://arxiv.org/pdf/2303.04137v5)）。
 
 ---
 
@@ -9,16 +8,16 @@
 
 Diffusion Policy 将 **visuomotor 策略**（视觉–运动策略）参数化为**动作空间上的条件去噪扩散过程**（conditional denoising diffusion process）。Visuomotor 指以相机图像（常辅以本体感觉）为输入、以机器人动作为输出的闭环映射，与以低维状态为观测的策略相对；论文标题中的 *Visuomotor Policy Learning* 即这一设定。给定最近若干步观测 $\mathbf{O}_t$，策略不直接回归单步动作，而是对长度为 $T_p$ 的动作序列 $\mathbf{A}_t$ 执行迭代去噪，从中取出 $T_a$ 步执行，并在下一控制周期重新规划。
 
-该方法属于**离线模仿学习**：训练数据为专家演示轨迹，不使用环境奖励，也不维护价值函数。与 PPO 等策略梯度方法的差别在于优化目标——Diffusion Policy 拟合条件数据分布 $p(\mathbf{A}_t \mid \mathbf{O}_t)$，而非最大化期望累积回报。观测 $\mathbf{O}_t$ 可以是图像、低维状态或二者拼接；扩散模型只规定如何参数化该条件分布。
+该方法属于**离线模仿学习**：训练数据为专家演示轨迹，不使用环境奖励，也不维护价值函数。优化目标是拟合条件数据分布 $p(\mathbf{A}_t \mid \mathbf{O}_t)$。观测 $\mathbf{O}_t$ 可以是图像、低维状态或二者拼接；扩散模型只规定如何参数化该条件分布。
 
-| 特性 | PPO | 行为克隆 (BC) | Diffusion Policy |
-|------|-----|---------------|------------------|
-| 学习范式 | 在线 RL（on-policy） | 离线模仿 | 离线模仿 |
-| 训练信号 | 奖励 $r_t$、Advantage | 专家动作 | 专家动作序列 + 噪声监督 |
-| 策略输出 | 单步分布 $\pi(a \mid s)$ | 单步点估计或 GMM | 动作序列 $\mathbf{A}_t \in \mathbb{R}^{T_p \times D_a}$ |
-| 多模态 | 对角高斯通常单峰 | MLP 回归为单峰 | 生成式，可表达多峰 |
-| 核心网络 | Actor + Critic | MLP / RNN | 1D U-Net 或 Transformer + 视觉编码器 |
-| 推理 | 一次前向采样 | 一次前向 | $K$ 步（或 DDIM 的 $N<K$ 步）迭代去噪 |
+| 特性 | 行为克隆（MSE / 高斯） | Diffusion Policy |
+|------|------------------------|------------------|
+| 学习范式 | 离线模仿 | 离线模仿 |
+| 训练信号 | 专家动作 | 专家动作序列 + 噪声监督 |
+| 策略输出 | 单步点估计或对角高斯 | 动作序列 $\mathbf{A}_t \in \mathbb{R}^{T_p \times D_a}$ |
+| 多模态 | 回归收敛到条件均值，通常单峰 | 生成式，可表达多峰 |
+| 核心网络 | MLP / RNN | 1D U-Net 或 Transformer + 视觉编码器 |
+| 推理 | 一次前向 | $K$ 步（或 DDIM 的 $N<K$ 步）迭代去噪 |
 
 经典 MDP 的单步观测–单步动作形式是上述框架的特例：$T_o = T_a = T_p = 1$。
 
@@ -143,7 +142,7 @@ $$
 
 同最优。确定性回归 BC 即此特例：网络输出条件均值。GMM、能量模型与扩散策略不满足该高斯假设，仍以 $\mathcal{L}_{\mathrm{NLL}}$ 或其等价形式（去噪、score matching）为训练目标。
 
-该方法实现简单，但训练分布为专家占用，部署时策略误差使状态分布偏移，误差沿时间累积（covariate shift）。若同一 $\mathbf{o}$ 对应多种合理动作，$\mathcal{L}_{\mathrm{BC}}$ 收敛到 $\mathbb{E}[\mathbf{a}\mid\mathbf{o}]$，动作被平均化，多模态任务上性能下降。与 PPO 中加权 $\nabla_\theta\log\pi_\theta$ 不同：此处对数似然本身即目标，权重恒为 1，数据来自专家而非当前策略。
+该方法实现简单，但训练分布为专家占用，部署时策略误差使状态分布偏移，误差沿时间累积（covariate shift）。若同一 $\mathbf{o}$ 对应多种合理动作，$\mathcal{L}_{\mathrm{BC}}$ 收敛到 $\mathbb{E}[\mathbf{a}\mid\mathbf{o}]$，动作被平均化，多模态任务上性能下降。
 
 ### 2.3 现有模仿学习方法的局限
 
@@ -547,7 +546,7 @@ DDIM 走确定性 ODE 轨迹，去除 DDPM 反向过程中的随机项，以少�
 5. 定期评估 success rate
 ```
 
-与 PPO 的主要差异：数据来自固定演示集，可跨 epoch 反复使用；无 Critic、无 Advantage、无 clipping；损失为去噪 MSE 而非策略梯度。
+数据来自固定演示集，可跨 epoch 反复使用。损失为去噪 MSE。
 
 ---
 
@@ -574,23 +573,7 @@ DDIM 走确定性 ODE 轨迹，去除 DDPM 反向过程中的随机项，以少�
 
 ---
 
-## 十一、与 PPO 的对照
-
-| 概念 | PPO | Diffusion Policy |
-|------|-----|------------------|
-| 优化目标 | $\mathbb{E}[\sum \gamma^t r_t]$ | $\log p(\mathbf{A}^0 \mid \mathbf{O}_t)$（via ELBO） |
-| 策略梯度 | $\nabla_\theta \log \pi_\theta(a \mid s) \cdot \hat{A}_t$ | $\nabla_\theta \|\epsilon - \epsilon_\theta\|^2$ |
-| 训练数据 | 当前策略 rollout | 专家演示 |
-| 价值函数 | 需要 Critic 估计 $V(s)$ | 不需要 |
-| 多模态 | 对角高斯难表达 | 生成式，不同初始噪声对应不同模式 |
-| 时序 | 逐步 MDP；RNN 可选 | 原生动作序列 |
-| 推理代价 | 一次前向 | $N$ 步去噪（DDIM 可压缩） |
-
-两者解决不同问题：PPO 适用于有奖励信号、需超越演示的在线学习；Diffusion Policy 适用于有高质量演示、奖励难以设计的模仿场景。实际系统中，常见做法是以 Diffusion Policy 初始化，再用 RL 微调，或将其作为 action proposal。
-
----
-
-## 十二、关键超参数
+## 十一、关键超参数
 
 | 参数 | 典型值 | 说明 |
 |------|--------|------|
@@ -606,12 +589,11 @@ DDIM 走确定性 ODE 轨迹，去除 DDPM 反向过程中的随机项，以少�
 
 ---
 
-## 十三、参考文献与延伸阅读
+## 十二、参考文献与延伸阅读
 
 1. Chi et al., *Diffusion Policy: Visuomotor Policy Learning via Action Diffusion*, RSS 2023. [arXiv:2303.04137](https://arxiv.org/pdf/2303.04137v5)
 2. Ho et al., *Denoising Diffusion Probabilistic Models*, NeurIPS 2020.
 3. Song et al., *Denoising Diffusion Implicit Models*, ICLR 2021.
 4. Janner et al., *Planning with Diffusion for Flexible Behavior Synthesis*, ICML 2022.
-5. 本仓库 PPO 笔记：[`ppo_notes.md`](ppo_notes.md)
 
 建议阅读顺序：Ho et al. 2020（DDPM 与 $\epsilon$-prediction）→ 论文 Sec. III–IV（动作序列 formulation 与架构）→ 官方 `diffusion_unet_image_policy.py` 中的 `compute_loss` 与 `predict_action`。

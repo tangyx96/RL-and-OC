@@ -1,6 +1,7 @@
 # Diffusion Policy 算法笔记
 
-下文公式与流程对应的实现，见官方仓库 [real-stanford/diffusion_policy](https://github.com/real-stanford/diffusion_policy)（Chi et al., RSS 2023；[arXiv:2303.04137](https://arxiv.org/pdf/2303.04137v5)）。
+下文公式与流程对应的实现，见官方仓库 [real-stanford/diffusion_policy](https://github.com/real-stanford/diffusion_policy)（Chi et al., RSS 2023；[arXiv:2303.04137](https://arxiv.org/pdf/2303.04137v5)）。  
+同一动作序列接口下的 flow matching 头见 [`flow_matching_notes.md`](flow_matching_notes.md)（π₀ / openpi）。
 
 ---
 
@@ -8,7 +9,7 @@
 
 Diffusion Policy 将 **visuomotor 策略**（视觉–运动策略）参数化为**动作空间上的条件去噪扩散过程**（conditional denoising diffusion process）。Visuomotor 指以相机图像（常辅以本体感觉）为输入、以机器人动作为输出的闭环映射，与以低维状态为观测的策略相对；论文标题中的 *Visuomotor Policy Learning* 即这一设定。给定最近若干步观测 $\mathbf{O}_t$，策略不直接回归单步动作，而是对长度为 $T_p$ 的动作序列 $\mathbf{A}_t$ 执行迭代去噪，从中取出 $T_a$ 步执行，并在下一控制周期重新规划。
 
-该方法属于**离线模仿学习**：训练数据为专家演示轨迹，不使用环境奖励，也不维护价值函数。优化目标是拟合条件数据分布 $p(\mathbf{A}_t \mid \mathbf{O}_t)$。观测 $\mathbf{O}_t$ 可以是图像、低维状态或二者拼接；扩散模型只规定如何参数化该条件分布。
+该方法属于**离线模仿学习**：训练数据为专家演示轨迹，不使用环境奖励，也不维护价值函数。优化目标是拟合条件数据分布 $p(\mathbf{A}_t \mid \mathbf{O}_t)$。专家分布无闭式密度，演示集仅提供有限样本；策略以生成过程参数化该条件分布并从中抽样。观测 $\mathbf{O}_t$ 可以是图像、低维状态或二者拼接，作为条件，不参与扩散。
 
 | 特性 | 行为克隆（MSE / 高斯） | Diffusion Policy |
 |------|------------------------|------------------|
@@ -158,7 +159,9 @@ Diffusion Policy 的出发点，是将 DDPM 在图像生成中已验证的性质
 
 ### 2.4 DDPM 的基本框架
 
-目标是拟合高维、多峰的数据分布 $q(x_0)$ 并从中抽样。该分布无闭式密度，映射 $x=f_{\theta}(z)$、$z\sim\mathcal{N}(0,I)$ 在多峰上易平均化且训练不稳。DDPM（Ho et al., 2020）将生成分解为多步：以不含可学习参数的前向核将边缘 $q(x_0)$ 逐步变换为 $q(x_K)\approx\mathcal{N}(0,I)$，再学习其逐步逆。前向核固定，$x_k$ 中的噪声由重参数化显式给出，训练目标化为对 $\epsilon$ 的回归；生成分布由反向核 $p_{\theta}$ 定义。$\beta_k$ 较小时每步扰动很小，逆核可用高斯逼近。
+目标是拟合高维、多峰的数据分布 $q(x_0)$ 并从中抽样。$q$ 无闭式密度，可用的只是有限样本，经验测度为 $\frac{1}{N}\sum_{i=1}^{N}\delta_{x_0^{(i)}}$。直接学习单步映射 $x=f_{\theta}(z)$、$z\sim\mathcal{N}(0,I)$ 在多峰上易收敛到条件均值，且训练不稳定。DDPM（Ho et al., 2020）将生成分解为多步：以不含可学习参数的前向核将边缘 $q(x_0)$ 逐步变换为 $q(x_K)\approx\mathcal{N}(0,I)$，再学习其逐步逆。前向核固定，$x_k$ 中的噪声由重参数化显式给出，训练目标化为对 $\epsilon$ 的回归；生成分布由反向核 $p_{\theta}$ 定义。$\beta_k$ 较小时每步扰动很小，逆核可用高斯逼近。
+
+原论文中 $x_0$ 为图像。Diffusion Policy 将其换为动作序列并加入观测条件，拟合 $q(\mathbf{A}_t\mid\mathbf{O}_t)$；图像属于 $\mathbf{O}_t$，既不加噪也不被生成。同一批专家样本亦可用 GMM、能量模型或 flow matching 拟合，DDPM 是其中一种在高维、多峰上训练较稳定的参数化。
 
 记 $x_0$ 为数据，$x_k$ 为第 $k$ 步状态（$k=1,\ldots,K$）。$k$ 增大则噪声增强，$k$ 减小则噪声减弱：
 
@@ -166,6 +169,8 @@ Diffusion Policy 的出发点，是将 DDPM 在图像生成中已验证的性质
 前向（加噪，核 q）：  x_0 → x_1 → ⋯ → x_K ≈ N(0, I)
 反向（去噪，核 p_θ）： x_K → x_{K-1} → ⋯ → x_0
 ```
+
+$q$ 由数据与固定前向核诱导，训练时用于构造加噪样本；$p_\theta$ 为学习到的逆过程，推理时从 $x_K$ 迭代采样。二者不是同一条计算链。
 
 #### 前向过程
 
@@ -176,36 +181,43 @@ q(x_k \mid x_{k-1}) = \mathcal{N}\!\left(x_k;\, \sqrt{\alpha_{k}}\, x_{k-1},\, \
 \qquad \alpha_{k} = 1 - \beta_{k},
 $$
 
-其中 $\{\beta_{k}\}_{k=1}^{K}$ 为预先给定的噪声日程。各向同性高斯 $\mathcal{N}(x;\mu,\sigma^{2}I)$ 的密度为
+其中 $\{\beta_{k}\}_{k=1}^{K}$ 为预先给定的噪声日程。均值 $\sqrt{\alpha_{k}}\,x_{k-1}$ 将信号按 $\sqrt{\alpha_{k}}<1$ 收缩，协方差 $\beta_{k}I$ 注入噪声。若 $z\sim\mathcal{N}(0,I)$，则 $\sigma z\sim\mathcal{N}(0,\sigma^{2}I)$，再平移
 
 $$
-(2\pi\sigma^{2})^{-d/2}\exp\!\left(-\frac{\|x-\mu\|^{2}}{2\sigma^{2}}\right),
+\mu+\sigma z\sim\mathcal{N}(\mu,\sigma^{2}I).
 $$
 
-故
-
-$$
-q(x_k \mid x_{k-1})
-=(2\pi\beta_{k})^{-d/2}
-\exp\!\left(
--\frac{\|x_k-\sqrt{\alpha_{k}}\,x_{k-1}\|^{2}}{2\beta_{k}}
-\right).
-$$
-
-均值 $\sqrt{\alpha_{k}}\,x_{k-1}$ 将信号按 $\sqrt{\alpha_{k}}<1$ 收缩，协方差 $\beta_{k}I$ 注入噪声。重参数化为
+因此，取 $\sigma=\sqrt{\beta_{k}}$，则上式可写作
 
 $$
 x_k=\sqrt{\alpha_{k}}\,x_{k-1}+\sqrt{\beta_{k}}\,\epsilon_{k},
 \qquad \epsilon_{k}\sim\mathcal{N}(0,I).
 $$
 
-定义 $\bar{\alpha}_{k}=\prod_{s=1}^{k}\alpha_{s}$。从 $x_0$ 迭代并合并独立高斯，方差累加为 $1-\bar{\alpha}_{k}$，得到一步边际
+定义 $\bar{\alpha}_{k}=\prod_{s=1}^{k}\alpha_{s}$。下面对 $k$ 归纳证明
 
 $$
-q(x_k \mid x_0) = \mathcal{N}\!\left(x_k;\, \sqrt{\bar{\alpha}_{k}}\, x_0,\, (1 - \bar{\alpha}_{k})\mathbf{I}\right),
+q(x_k \mid x_0) = \mathcal{N}\!\left(x_k;\, \sqrt{\bar{\alpha}_{k}}\, x_0,\, (1 - \bar{\alpha}_{k})\mathbf{I}\right).
 $$
 
-即
+$k=1$ 时 $x_1=\sqrt{\alpha_1}\,x_0+\sqrt{\beta_1}\,\epsilon_1$，方差 $\beta_1=1-\alpha_1=1-\bar\alpha_1$，命题成立。
+
+设 $x_{k-1}=\sqrt{\bar\alpha_{k-1}}\,x_0+\sqrt{1-\bar\alpha_{k-1}}\,\epsilon'$，其中 $\epsilon'\sim\mathcal{N}(0,I)$ 与 $\epsilon_k$ 独立。代入一步核，并注意 $\bar\alpha_k=\alpha_k\bar\alpha_{k-1}$，
+
+$$
+x_k=\sqrt{\alpha_k}\,x_{k-1}+\sqrt{\beta_k}\,\epsilon_k
+=\sqrt{\bar\alpha_k}\,x_0+\sqrt{\alpha_k(1-\bar\alpha_{k-1})}\,\epsilon'+\sqrt{\beta_k}\,\epsilon_k.
+$$
+
+独立高斯对加法封闭：若 $X\sim\mathcal{N}(\mu_1,\sigma_1^{2}I)$、$Y\sim\mathcal{N}(\mu_2,\sigma_2^{2}I)$ 且相互独立，则 $X+Y\sim\mathcal{N}(\mu_1+\mu_2,(\sigma_1^{2}+\sigma_2^{2})I)$。上式两项噪声均值皆为零，方差分别为 $\alpha_k(1-\bar\alpha_{k-1})$ 与 $\beta_k$，故和仍为高斯，均值 $\sqrt{\bar\alpha_k}\,x_0$，方差
+
+$$
+\alpha_k(1-\bar\alpha_{k-1})+\beta_k
+=\alpha_k-\bar\alpha_k+(1-\alpha_k)
+=1-\bar\alpha_k,
+$$
+
+其中用了 $\bar\alpha_k=\alpha_k\bar\alpha_{k-1}$ 与 $\beta_k=1-\alpha_k$。故
 
 $$
 x_k = \sqrt{\bar{\alpha}_{k}}\, x_0 + \sqrt{1 - \bar{\alpha}_{k}}\, \epsilon,
@@ -216,51 +228,71 @@ $k=K$ 且 $\bar\alpha_K\approx 0$ 时，$x_K$ 近似 $\mathcal{N}(0,I)$。
 
 #### 反向过程
 
-生成从 $x_K\sim\mathcal{N}(0,I)$ 出发，沿 $k=K,\ldots,1$ 逐步降低噪声。真反向核为
+生成从 $x_K\sim\mathcal{N}(0,I)$ 出发，沿 $k=K,\ldots,1$ 逐步降低噪声。理想的一步转移是真反向核 $q(x_{k-1}\mid x_k)$。由全概率公式对未知的干净数据边缘化：
 
 $$
 q(x_{k-1}\mid x_k)
 =\int q(x_{k-1}\mid x_k,x_0)\,q(x_0\mid x_k)\,\mathrm{d}x_0.
 $$
 
-$q(x_{k-1}\mid x_k,x_0)$ 为高斯且有闭式，$q(x_0\mid x_k)$ 未知，积分不可直接计算。$\beta_k$ 较小时该核接近高斯，故学习
+给定 $x_0$ 与 $x_k$ 时，$q(x_{k-1}\mid x_k,x_0)$ 为高斯且有闭式（4.2 节）。$q(x_0\mid x_k)$ 是仅观测到加噪样本时干净数据的后验，即未知的数据分布，故该积分无闭式，也不进入实现。$\beta_k$ 较小时 $x_k$ 相对 $x_{k-1}$ 仅有微小扰动，$q(x_{k-1}\mid x_k)$ 仍接近高斯，故以参数化高斯逼近：
 
 $$
 p_{\theta}(x_{k-1}\mid x_k)
-=\mathcal{N}\!\big(x_{k-1};\,\mu_{\theta}(x_k,k),\,\sigma_k^{2}I\big),
+=\mathcal{N}\!\big(x_{k-1};\,\mu_{\theta}(x_k,k),\,\sigma_k^{2}I\big).
 $$
 
-$\sigma_k^{2}$ 取 $\beta_k$ 或后验方差 $\tilde\beta_k$，不由网络输出。反向链为
+方差 $\sigma_k^{2}$ 取 $\beta_k$ 或后验方差 $\tilde\beta_k$，由噪声日程给出，不由网络输出。网络只决定均值。整条生成分布为
 
 $$
 p_{\theta}(x_{0:K})
 =p(x_K)\prod_{k=1}^{K}p_{\theta}(x_{k-1}\mid x_k),
 \qquad
-p(x_K)=\mathcal{N}(0,I).
+p(x_K)=\mathcal{N}(0,I),
 $$
 
-由前向一步边际解出 $x_0=\frac{1}{\sqrt{\bar\alpha_k}}(x_k-\sqrt{1-\bar\alpha_k}\,\epsilon)$，代入 $q(x_{k-1}\mid x_k,x_0)$ 的均值，得到
+即先抽 $x_K$，再依次抽 $x_{K-1}\mid x_K,\ldots,x_0\mid x_1$。乘积中每一项对应推理循环的一次迭代。
+
+前向一步边际为 $x_k=\sqrt{\bar\alpha_k}\,x_0+\sqrt{1-\bar\alpha_k}\,\epsilon$。解出
+
+$$
+x_0=\frac{1}{\sqrt{\bar\alpha_k}}\big(x_k-\sqrt{1-\bar\alpha_k}\,\epsilon\big).
+$$
+
+若 $\epsilon$ 已知，即可从 $x_k$ 还原 $x_0$。将此式代入 $q(x_{k-1}\mid x_k,x_0)$ 的均值 $\tilde\mu_k(x_k,x_0)$，$x_0$ 消去后得到仅依赖 $(x_k,\epsilon)$ 的中心（推导见 4.3 节）：
 
 $$
 \tilde\mu_k(x_k,\epsilon)
 =\frac{1}{\sqrt{\alpha_k}}\left(x_k-\frac{\beta_k}{\sqrt{1-\bar\alpha_k}}\,\epsilon\right).
 $$
 
-网络 $\epsilon_{\theta}(x_k,k)$ 预测 $\epsilon$，均值取同一形式：
+这是噪声已知时一步去噪的最优中心，推理时 $\epsilon$ 未知。以网络 $\epsilon_{\theta}(x_k,k)$ 替代，均值取同一形式：
 
 $$
 \mu_{\theta}(x_k,k)
 =\frac{1}{\sqrt{\alpha_k}}\left(x_k-\frac{\beta_k}{\sqrt{1-\bar\alpha_k}}\,\epsilon_{\theta}(x_k,k)\right).
 $$
 
-与前向 $x_k=\sqrt{\alpha_k}\,x_{k-1}+\sqrt{\beta_k}\,\epsilon_k$ 相对：此处从 $x_k$ 减去估计噪声并除以 $\sqrt{\alpha_k}$，得到更干净的 $x_{k-1}$。一步采样
+$\tilde\mu_k$ 与 $\mu_\theta$ 仅差 $\epsilon$ 与 $\epsilon_\theta$。一步采样即从 $p_\theta$ 抽点。由同一重参数化，$\sigma_k z\sim\mathcal{N}(0,\sigma_k^{2}I)$，故
 
 $$
 x_{k-1}=\mu_{\theta}(x_k,k)+\sigma_k z,
-\qquad z\sim\mathcal{N}(0,I)
+\qquad z\sim\mathcal{N}(0,I).
 $$
 
-（$k=1$ 时常取 $z=0$）。推理对 $k=K,\ldots,1$ 重复该步，输出 $x_0$。训练不展开反向链：用前向公式由 $(x_0,\epsilon,k)$ 构造 $x_k$，监督 $\epsilon_{\theta}(x_k,k)\approx\epsilon$。
+将 $\mu_\theta$ 代入后，形式为从 $x_k$ 减去一块噪声再除以 $\sqrt{\alpha_k}$。系数是后验中的 $\beta_k/\sqrt{1-\bar\alpha_k}$，不是单步前向求逆的 $\sqrt{\beta_k}$；二者仅在 $k=1$（$1-\bar\alpha_1=\beta_1$）时相同。$\sigma_k^{2}$ 取 $\beta_k$ 或 $\tilde\beta_k$，与前向一步方差同源；$k=1$ 时常取 $z=0$。去掉随机项即 DDIM（第八节）。对 $k=K,\ldots,1$ 重复，输出 $x_0$。
+
+训练时 $x_0$ 已知，无需展开反向链。由前向边际从 $(x_0,\epsilon,k)$ 一次构造 $x_k$，监督 $\epsilon_{\theta}(x_k,k)\approx\epsilon$。推理将 $\epsilon_\theta$ 代入 $\mu_\theta$ 后迭代。二者分别对应前向闭式与反向采样。
+
+| 对象 | 出现位置 | 作用 |
+|------|----------|------|
+| $q(x_{k-1}\mid x_k)$ 的积分 | 推导 | 标明真逆无闭式 |
+| $x_k=\sqrt{\bar\alpha_k}\,x_0+\sqrt{1-\bar\alpha_k}\,\epsilon$ | 训练 | 一次构造加噪样本 |
+| $\epsilon_\theta(x_k,k)\approx\epsilon$ | 训练 | 去噪 MSE |
+| $\tilde\mu_k(x_k,\epsilon)$ | 推导 | 噪声已知时的理想均值 |
+| $\mu_\theta(x_k,k)$ | 推理 | 以 $\epsilon_\theta$ 代入后的去噪中心 |
+| $x_{k-1}=\mu_\theta+\sigma_k z$ | 推理 | 反向循环的一步更新 |
+| $p_\theta(x_{0:K})=p(x_K)\prod_k p_\theta$ | 推导 | 反向循环的联合分布 |
 
 ---
 
@@ -295,19 +327,20 @@ $$
 p_\theta(\mathbf{A}_t \mid \mathbf{O}_t),
 $$
 
-而非 Janner et al. (2022) 规划框架中的联合分布 $p(\mathbf{A}_t, \mathbf{O}_t)$。观测仅作为条件，不参与扩散，从而避免在推理时推断未来状态，并允许视觉编码器在 $K$ 步去噪中**只运行一次**。
+而非 Janner et al. (2022) 规划框架中的联合分布 $p(\mathbf{A}_t, \mathbf{O}_t)$。观测仅作为条件，不参与扩散，从而避免在推理时推断未来状态，并允许视觉编码器在 $K$ 步去噪中**只运行一次**。第二节的 $x_0$ 在此对应 $\mathbf{A}_t$，数据边缘 $q(x_0)$ 换为条件 $q(\mathbf{A}_t\mid\mathbf{O}_t)$。
 
 ### 3.3 反向去噪
 
-记 $\mathbf{A}^{0}\equiv\mathbf{A}_t$ 为干净动作序列，$\mathbf{A}^{k}$ 为第 $k$ 步加噪版本。反向核仍取高斯，噪声网络以观测为条件：$\epsilon_{\theta}(\mathbf{O}_t,\mathbf{A}^{k},k)$。一步写为
+记 $\mathbf{A}^{0}\equiv\mathbf{A}_t$ 为干净动作序列，$\mathbf{A}^{k}$ 为第 $k$ 步加噪版本。反向核仍取 2.4 节的高斯 $p_\theta$，噪声网络以观测为条件：$\epsilon_{\theta}(\mathbf{O}_t,\mathbf{A}^{k},k)$。一步为
 
 $$
 \mathbf{A}^{k-1}
-=\alpha_k\big(\mathbf{A}^{k}-\gamma_k\,\epsilon_{\theta}(\mathbf{O}_t,\mathbf{A}^{k},k)\big)
-+\mathcal{N}(0,\sigma_k^{2}I),
+=\frac{1}{\sqrt{\alpha_k}}\left(\mathbf{A}^{k}-\frac{\beta_k}{\sqrt{1-\bar\alpha_k}}\,\epsilon_{\theta}(\mathbf{O}_t,\mathbf{A}^{k},k)\right)
++\sigma_k z,
+\qquad z\sim\mathcal{N}(0,I),
 $$
 
-其中 $\alpha_k,\gamma_k,\sigma_k$ 由噪声日程确定，与 $\mu_{\theta}$ 中的 $\alpha_k$、$\beta_k/\sqrt{1-\bar\alpha_k}$ 一致。从 $\mathbf{A}^{K}\sim\mathcal{N}(0,I)$ 迭代 $k=K,\ldots,1$ 得到 $\mathbf{A}^{0}$，取 $\mathbf{A}^{0}[0:T_a]$ 执行。
+其中 $\alpha_k=1-\beta_k$ 与 2.4 节相同。从 $\mathbf{A}^{K}\sim\mathcal{N}(0,I)$ 迭代 $k=K,\ldots,1$ 得到 $\mathbf{A}^{0}$，取 $\mathbf{A}^{0}[0:T_a]$ 执行。该循环实现 $p_\theta(\mathbf{A}^{0:K}\mid\mathbf{O}_t)$。
 
 ### 3.4 Receding horizon 与 warm-start
 
@@ -319,21 +352,21 @@ $$
 
 ### 4.1 变分下界
 
-无条件 DDPM 的最大似然目标不可解析，转而优化 ELBO。对数据 $x_0$，有
+无条件 DDPM 的最大似然目标不可解析。对数据 $x_0$，
 
 $$
-\log p_\theta(x_0) \geq \mathbb{E}_{q(x_{1:K} \mid x_0)} \left[ \log \frac{p_\theta(x_{0:K})}{q(x_{1:K} \mid x_0)} \right] \equiv \mathcal{L}_{\mathrm{ELBO}}.
+\log p_\theta(x_0) \geq \mathbb{E}_{q(x_{1:K} \mid x_0)} \left[ \log \frac{p_\theta(x_{0:K})}{q(x_{1:K} \mid x_0)} \right].
 $$
 
-展开后（Ho et al., 2020, Eq. 5）：
+Ho et al. (2020, Eq. 5) 最小化该下界的相反数
 
 $$
-\mathcal{L}_{\mathrm{ELBO}} = \underbrace{D_{\mathrm{KL}}\!\left(q(x_K \mid x_0) \,\|\, p(x_K)\right)}_{\text{先验匹配}}
+L = \underbrace{D_{\mathrm{KL}}\!\left(q(x_K \mid x_0) \,\|\, p(x_K)\right)}_{\text{先验匹配}}
 + \sum_{k=2}^{K} \underbrace{\mathbb{E}_{q}\!\left[D_{\mathrm{KL}}\!\left(q(x_{k-1} \mid x_k, x_0) \,\|\, p_\theta(x_{k-1} \mid x_k)\right)\right]}_{\text{去噪匹配}}
 - \underbrace{\mathbb{E}_{q}\!\left[\log p_\theta(x_0 \mid x_1)\right]}_{\text{重建项}}.
 $$
 
-其中前向后验 $q(x_{k-1} \mid x_k, x_0)$ 有闭式高斯解（见 4.2 节）。Diffusion Policy 在每一项中加入观测条件 $\mathbf{O}_t$，即对 $p_\theta(\mathbf{A}^{k-1} \mid \mathbf{A}^k, \mathbf{O}_t)$ 进行同样的变分推断。
+最小化 $L$ 与最大化下界同向。前向后验 $q(x_{k-1} \mid x_k, x_0)$ 有闭式高斯解（见 4.2 节）。Diffusion Policy 在每一项中加入观测条件 $\mathbf{O}_t$，即对 $p_\theta(\mathbf{A}^{k-1} \mid \mathbf{A}^k, \mathbf{O}_t)$ 进行同样的变分推断。
 
 ### 4.2 前向后验的闭式
 
@@ -372,6 +405,8 @@ $$
 $$
 \mu_\theta(x_k, k) = \frac{1}{\sqrt{\alpha_k}}\left(x_k - \frac{\beta_k}{\sqrt{1 - \bar{\alpha}_k}}\, \epsilon_\theta(x_k, k)\right).
 $$
+
+该代入只用于导出 $\mu_\theta$ 的参数化。推理并不先恢复 $x_0$，而是直接用 $\epsilon_\theta$ 计算 $\mu_\theta$；$\tilde\mu_k$ 本身不出现在实现中。
 
 ### 4.4 去噪项与 MSE 损失
 
@@ -422,8 +457,8 @@ $$
 
 ```text
 max log p(A^0 | O)
-   ↓ 变分下界
-L_ELBO = KL(q(A^K|A^0) || p(A^K)) + Σ_k KL(q(A^{k-1}|A^k,A^0) || p_θ(A^{k-1}|A^k)) - log p_θ(A^0|A^1)
+   ↓ 变分下界；最小化其相反数 L（Ho et al. Eq. 5）
+L = KL(q(A^K|A^0) || p(A^K)) + Σ_k KL(q(A^{k-1}|A^k,A^0) || p_θ(A^{k-1}|A^k)) - log p_θ(A^0|A^1)
    ↓ 前向后验 μ̃_k 用 ε 表示
 μ̃_k = (1/√α_k)(A^k - (β_k/√(1-ᾱ_k)) ε)
    ↓ 反向模型 μ_θ 以 ε_θ 参数化
@@ -546,7 +581,7 @@ DDIM 走确定性 ODE 轨迹，去除 DDPM 反向过程中的随机项，以少�
 5. 定期评估 success rate
 ```
 
-数据来自固定演示集，可跨 epoch 反复使用。损失为去噪 MSE。
+数据来自固定演示集，可跨 epoch 反复使用。损失为去噪 MSE：标签是前向注入的 $\epsilon$，不是专家动作 $\mathbf{A}^{0}$。该步骤对应 2.4 节的前向边际，不展开反向链。
 
 ---
 
@@ -562,14 +597,16 @@ DDIM 走确定性 ODE 轨迹，去除 DDPM 反向过程中的随机项，以少�
 
 4. for k = K, K-1, ..., 1:
        ε_pred = ε_θ(O_t, A^k, k)
-       A^{k-1} = DenoiseStep(A^k, ε_pred, k)    # DDPM 或 DDIM
+       μ = (1/√α_k) (A^k - (β_k/√(1-ᾱ_k)) ε_pred)
+       A^{k-1} = μ + σ_k z              # DDPM；DDIM 则去掉随机项
+       # k=1 时常取 z=0
 
 5. 执行 A^0[0], ..., A^0[T_a - 1]
 
 6. 等待 T_a 步后回到步骤 1
 ```
 
-实机部署中，策略与环境异步交互：`get_obs` 读取最新观测，`exec_actions` 将动作序列及时间戳送入插值控制器，不阻塞等待执行完成。
+该循环实现 2.4 节的反向过程；$\mathbf{O}_t$ 的编码在 $K$ 步内保持不变。实机部署中，策略与环境异步交互：`get_obs` 读取最新观测，`exec_actions` 将动作序列及时间戳送入插值控制器，不阻塞等待执行完成。
 
 ---
 
@@ -595,5 +632,7 @@ DDIM 走确定性 ODE 轨迹，去除 DDPM 反向过程中的随机项，以少�
 2. Ho et al., *Denoising Diffusion Probabilistic Models*, NeurIPS 2020.
 3. Song et al., *Denoising Diffusion Implicit Models*, ICLR 2021.
 4. Janner et al., *Planning with Diffusion for Flexible Behavior Synthesis*, ICML 2022.
+5. Lipman et al., *Flow Matching for Generative Modeling*, ICLR 2023. [`flow_matching_notes.md`](flow_matching_notes.md)
+6. Black et al., *π₀: A Vision-Language-Action Flow Model*, arXiv:2410.24164, 2024.
 
-建议阅读顺序：Ho et al. 2020（DDPM 与 $\epsilon$-prediction）→ 论文 Sec. III–IV（动作序列 formulation 与架构）→ 官方 `diffusion_unet_image_policy.py` 中的 `compute_loss` 与 `predict_action`。
+建议阅读顺序：Ho et al. 2020（DDPM 与 $\epsilon$-prediction）→ 论文 Sec. III–IV（动作序列 formulation 与架构）→ 官方 `diffusion_unet_image_policy.py` 中的 `compute_loss` 与 `predict_action` → [`flow_matching_notes.md`](flow_matching_notes.md)（CFM 与 π₀）。

@@ -141,7 +141,7 @@ $$
 
 ## 四、Flow Matching 训练目标
 
-Fast-WAM 对动作与视频采用同一套 conditional flow matching（CFM），与 $\pi_0$ 等 VLA flow 模型同族，而非 DDPM 的 $\epsilon$-prediction（见 [`diffusion_policy_notes.md`](diffusion_policy_notes.md) 第四节）。
+Fast-WAM 对动作与视频采用同一套 conditional flow matching（CFM），与 $\pi_0$ 等 VLA flow 模型同族，而非 DDPM 的 $\epsilon$-prediction。CFM 的一般形式化见 [`flow_matching_notes.md`](flow_matching_notes.md)；DDPM 见 [`diffusion_policy_notes.md`](diffusion_policy_notes.md) 第四节。
 
 ### 4.1 从概率路径到速度场
 

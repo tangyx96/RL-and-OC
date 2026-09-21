@@ -303,25 +303,37 @@ $$
 
 > 效果：坏的动作概率最多减小到原来的 $(1-\epsilon)$ 倍，之后不再惩罚。
 
-### 5.4 核心思想一句话
+### 5.4 小结
 
-> 如果策略更新在可接受范围内（$r_t \in [1-\epsilon, 1+\epsilon]$），正常更新；如果太激进，直接裁剪掉梯度。这等价于给策略更新加了一个"软约束"。
+裁剪只限制朝有利方向走得过远：$\hat A_t>0$ 时 $r_t$ 不得超过 $1+\epsilon$，$\hat A_t<0$ 时不得低于 $1-\epsilon$。反向越界不截断。这给出策略更新的单侧软约束，替代 TRPO 的 KL 信赖域。
 
 ---
 
 ## 六、$L^{CLIP}$ 与策略梯度的关系
 
+$\nabla_\theta r_t(\theta)=r_t(\theta)\,\nabla_\theta\log\pi_\theta(a_t\mid s_t)$。$\min$ 取未裁剪项时，
+
 $$
-\nabla_\theta L^{CLIP} = \begin{cases}
-r_t(\theta) \cdot \nabla_\theta \log \pi_\theta(a_t|s_t) \cdot \hat{A}_t, & |r_t - 1| \leq \epsilon \\[8pt]
-0, & |r_t - 1| > \epsilon
+\nabla_\theta\big(r_t(\theta)\,\hat A_t\big)
+=r_t(\theta)\,\nabla_\theta\log\pi_\theta(a_t\mid s_t)\,\hat A_t;
+$$
+
+取裁剪项时该支路对 $\theta$ 为常数，梯度为零。由第五节，未裁剪项被选中当且仅当优势尚未把比率推过有利一侧的边界：
+
+$$
+\nabla_\theta L^{\mathrm{CLIP}}
+=
+\begin{cases}
+r_t(\theta)\,\nabla_\theta\log\pi_\theta(a_t\mid s_t)\,\hat A_t,
+& \hat A_t\ge 0,\; r_t\le 1+\epsilon
+\quad\text{或}\quad
+\hat A_t<0,\; r_t\ge 1-\epsilon,\\[6pt]
+0,
+& \text{其余}.
 \end{cases}
 $$
 
-**推导关键**：$\nabla_\theta r_t(\theta) = r_t(\theta) \cdot \nabla_\theta \log \pi_\theta(a_t|s_t)$
-
-- 在裁剪范围内，梯度就是带重要性权重 $r_t$ 的策略梯度
-- 超出裁剪范围，梯度被硬截断为 0
+$\hat A_t>0$ 且 $r_t<1-\epsilon$，或 $\hat A_t<0$ 且 $r_t>1+\epsilon$ 时，比率虽已离开 $[1-\epsilon,1+\epsilon]$，仍走未裁剪支路。
 
 ---
 
@@ -511,7 +523,7 @@ $\lambda$ 不是再乘一个折扣，而是在「信模型 $V$」与「信轨迹
      b. 计算裁剪后的策略损失 L_CLIP
      c. 计算价值函数损失（也有裁剪）
      d. 计算熵损失（鼓励探索）
-     e. 总损失 = L_CLIP - ent_coef * entropy + vf_coef * v_loss
+     e. 总损失 = -L^CLIP - ent_coef * entropy + vf_coef * v_loss
      f. 反向传播，梯度裁剪，更新参数
      g. 估计新旧策略的 KL，并统计落入裁剪区的样本比例（诊断；可选按 KL 提前结束本批更新）
 
@@ -522,15 +534,13 @@ $\lambda$ 不是再乘一个折扣，而是在「信模型 $V$」与「信轨迹
 
 ## 十、总损失函数
 
+第五节的 $L^{\mathrm{CLIP}}$ 对 $\theta$ 最大化。实现中最小化
+
 $$
-L_{total} = L^{CLIP} - c_{ent} \cdot H(\pi_\theta) + c_{vf} \cdot L^{VF}
+L_{\mathrm{total}} = -L^{\mathrm{CLIP}} - c_{ent} \cdot H(\pi_\theta) + c_{vf} \cdot L^{VF}.
 $$
 
-- **$L^{CLIP}$**：裁剪后的策略损失（见第五节）
-- **$-c_{ent} \cdot H(\pi_\theta)$**：熵正则化（负号 = 最大化熵），鼓励探索，防止过早收敛
-- **$c_{vf} \cdot L^{VF}$**：价值函数损失，让 Critic 准确估计 $V(s)$
-
-实现里对应 `L_total = L_CLIP - ent_coef * entropy + vf_coef * v_loss`。
+前两项分别提高裁剪目标与策略熵，第三项拟合价值。$c_{ent}$（`ent_coef`）通常取 $0.01$，$c_{vf}$（`vf_coef`）通常取 $0.5$。
 
 ### 10.1 熵 $H(\pi_\theta)$
 
@@ -552,7 +562,7 @@ $$
 H(\pi_\theta) = \mathbb{E}_{s\sim\pi_{\theta_{old}}}\bigl[H(\pi_\theta(\cdot|s))\bigr]
 $$
 
-熵越大，动作越不确定。减去 $c_{ent} H$ 等价于最大化熵；$c_{ent}$（`ent_coef`）通常取 $0.01$。
+熵越大，动作越不确定。$L_{\mathrm{total}}$ 中的 $-c_{ent} H$ 使最小化该式时熵上升。
 
 ### 10.2 价值损失 $L^{VF}$
 
@@ -574,8 +584,6 @@ L^{VF} = \mathbb{E}\Bigl[\max\Bigl(
   \bigl(V^{clip}_t-\hat{R}_t\bigr)^2
 \Bigr)\Bigr]
 $$
-
-$c_{vf}$（`vf_coef`）通常取 $0.5$。
 
 ### 10.3 策略偏移的度量
 

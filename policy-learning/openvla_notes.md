@@ -1,6 +1,6 @@
 # Vision-Language-Action（VLA）与 OpenVLA 算法笔记
 
-下文以 Kim 等（2024）的 [OpenVLA](https://arxiv.org/abs/2406.09246) 为主线，梳理将视觉–语言模型直接微调为 visuomotor 策略的形式化与训练目标。官方实现：[openvla/openvla](https://github.com/openvla/openvla)。连续动作上的生成式模仿见 [`diffusion_policy_notes.md`](diffusion_policy_notes.md)，视频联合建模见 [`wam_notes.md`](wam_notes.md)。
+下文以 Kim 等（2024）的 [OpenVLA](https://arxiv.org/abs/2406.09246) 为主线，梳理将视觉–语言模型直接微调为 visuomotor 策略的形式化与训练目标。官方实现：[openvla/openvla](https://github.com/openvla/openvla)。连续动作上的生成式模仿见 [`diffusion_policy_notes.md`](diffusion_policy_notes.md)（DDPM）与 [`flow_matching_notes.md`](flow_matching_notes.md)（CFM / π₀），视频联合建模见 [`wam_notes.md`](wam_notes.md)。
 
 ---
 

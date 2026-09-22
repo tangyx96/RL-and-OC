@@ -181,13 +181,7 @@ q(x_k \mid x_{k-1}) = \mathcal{N}\!\left(x_k;\, \sqrt{\alpha_{k}}\, x_{k-1},\, \
 \qquad \alpha_{k} = 1 - \beta_{k},
 $$
 
-其中 $\{\beta_{k}\}_{k=1}^{K}$ 为预先给定的噪声日程。均值 $\sqrt{\alpha_{k}}\,x_{k-1}$ 将信号按 $\sqrt{\alpha_{k}}<1$ 收缩，协方差 $\beta_{k}I$ 注入噪声。若 $z\sim\mathcal{N}(0,I)$，则 $\sigma z\sim\mathcal{N}(0,\sigma^{2}I)$，再平移
-
-$$
-\mu+\sigma z\sim\mathcal{N}(\mu,\sigma^{2}I).
-$$
-
-因此，取 $\sigma=\sqrt{\beta_{k}}$，则上式可写作
+其中 $\{\beta_{k}\}_{k=1}^{K}$ 为预先给定的噪声日程。均值 $\sqrt{\alpha_{k}}\,x_{k-1}$ 将信号按 $\sqrt{\alpha_{k}}<1$ 收缩，协方差 $\beta_{k}I$ 注入噪声。由附录 A.1，
 
 $$
 x_k=\sqrt{\alpha_{k}}\,x_{k-1}+\sqrt{\beta_{k}}\,\epsilon_{k},
@@ -209,7 +203,7 @@ x_k=\sqrt{\alpha_k}\,x_{k-1}+\sqrt{\beta_k}\,\epsilon_k
 =\sqrt{\bar\alpha_k}\,x_0+\sqrt{\alpha_k(1-\bar\alpha_{k-1})}\,\epsilon'+\sqrt{\beta_k}\,\epsilon_k.
 $$
 
-独立高斯对加法封闭：若 $X\sim\mathcal{N}(\mu_1,\sigma_1^{2}I)$、$Y\sim\mathcal{N}(\mu_2,\sigma_2^{2}I)$ 且相互独立，则 $X+Y\sim\mathcal{N}(\mu_1+\mu_2,(\sigma_1^{2}+\sigma_2^{2})I)$。上式两项噪声均值皆为零，方差分别为 $\alpha_k(1-\bar\alpha_{k-1})$ 与 $\beta_k$，故和仍为高斯，均值 $\sqrt{\bar\alpha_k}\,x_0$，方差
+两项噪声独立、均值为零，方差分别为 $\alpha_k(1-\bar\alpha_{k-1})$ 与 $\beta_k$。由附录 A.2，和仍为高斯，均值 $\sqrt{\bar\alpha_k}\,x_0$，方差
 
 $$
 \alpha_k(1-\bar\alpha_{k-1})+\beta_k
@@ -273,7 +267,7 @@ $$
 =\frac{1}{\sqrt{\alpha_k}}\left(x_k-\frac{\beta_k}{\sqrt{1-\bar\alpha_k}}\,\epsilon_{\theta}(x_k,k)\right).
 $$
 
-$\tilde\mu_k$ 与 $\mu_\theta$ 仅差 $\epsilon$ 与 $\epsilon_\theta$。一步采样即从 $p_\theta$ 抽点。由同一重参数化，$\sigma_k z\sim\mathcal{N}(0,\sigma_k^{2}I)$，故
+$\tilde\mu_k$ 与 $\mu_\theta$ 仅差 $\epsilon$ 与 $\epsilon_\theta$。一步采样即从 $p_\theta$ 抽点。由附录 A.1，
 
 $$
 x_{k-1}=\mu_{\theta}(x_k,k)+\sigma_k z,
@@ -370,21 +364,67 @@ $$
 
 ### 4.2 前向后验的闭式
 
-由 Bayes 公式，在已知 $x_0$ 和 $x_k$ 时，$x_{k-1}$ 的后验为
+前向为马尔可夫链，故 $q(x_k\mid x_{k-1},x_0)=q(x_k\mid x_{k-1})$，从而
 
 $$
-q(x_{k-1} \mid x_k, x_0) = \mathcal{N}\!\left(x_{k-1};\, \tilde{\mu}_k(x_k, x_0),\, \tilde{\beta}_k \mathbf{I}\right),
+q(x_{k-1}\mid x_k,x_0)
+\propto
+q(x_k\mid x_{k-1})\,q(x_{k-1}\mid x_0).
 $$
 
-其中
+第二项已是 $x_{k-1}$ 上的高斯 $\mathcal{N}(\sqrt{\bar\alpha_{k-1}}\,x_0,\,(1-\bar\alpha_{k-1})I)$。第一项是 $x_k$ 的密度
 
 $$
-\tilde{\mu}_k(x_k, x_0) = \frac{\sqrt{\bar{\alpha}_{k-1}}\,\beta_k}{1 - \bar{\alpha}_k}\, x_0 + \frac{\sqrt{\alpha_k}\,(1 - \bar{\alpha}_{k-1})}{1 - \bar{\alpha}_k}\, x_k,
+q(x_k\mid x_{k-1})
+=(2\pi\beta_k)^{-d/2}
+\exp\Bigl(-\frac{\|x_k-\sqrt{\alpha_k}\,x_{k-1}\|^2}{2\beta_k}\Bigr).
+$$
+
+前置因子不含 $x_{k-1}$。固定 $x_k$ 后
+
+$$
+\|x_k-\sqrt{\alpha_k}\,x_{k-1}\|^2
+=\alpha_k\Bigl\|x_{k-1}-\frac{x_k}{\sqrt{\alpha_k}}\Bigr\|^2,
+$$
+
+指数化为
+
+$$
+-\frac{\alpha_k}{2\beta_k}\Bigl\|x_{k-1}-\frac{x_k}{\sqrt{\alpha_k}}\Bigr\|^2
+=-\frac{1}{2\sigma^2}\Bigl\|x_{k-1}-\frac{x_k}{\sqrt{\alpha_k}}\Bigr\|^2,
 \qquad
+\sigma^2=\frac{\beta_k}{\alpha_k}.
+$$
+
+这与 $\mathcal{N}(x_k/\sqrt{\alpha_k},\,(\beta_k/\alpha_k)I)$ 的指数相同，归一化常数不同，故只是正比。由附录 A.3，精度 $\tau_1=\alpha_k/\beta_k$，$\tau_2=1/(1-\bar\alpha_{k-1})$，后验协方差为
+
+$$
+\tilde\beta_k=\frac{1}{\tau_1+\tau_2}
+=\frac{\beta_k(1-\bar\alpha_{k-1})}{\alpha_k(1-\bar\alpha_{k-1})+\beta_k}.
+$$
+
+分母用 $\bar\alpha_k=\alpha_k\bar\alpha_{k-1}$ 与 $\beta_k=1-\alpha_k$ 化为 $1-\bar\alpha_k$，故
+
+$$
 \tilde{\beta}_k = \frac{1 - \bar{\alpha}_{k-1}}{1 - \bar{\alpha}_k}\, \beta_k.
 $$
 
-**推导要点**：前向链满足 $q(x_k \mid x_0) = \mathcal{N}(\sqrt{\bar{\alpha}_k} x_0, (1-\bar{\alpha}_k)\mathbf{I})$ 且 $q(x_k \mid x_{k-1}) = \mathcal{N}(\sqrt{\alpha_k} x_{k-1}, \beta_k \mathbf{I})$。将 $x_k$ 对 $x_{k-1}$ 和 $x_0$ 做条件，利用高斯分布的共轭性即可得到上述后验均值。
+均值按精度加权：
+
+$$
+\begin{aligned}
+\tilde{\mu}_k(x_k, x_0)
+&=\tilde\beta_k\Bigl(\tau_1\cdot\frac{x_k}{\sqrt{\alpha_k}}+\tau_2\cdot\sqrt{\bar\alpha_{k-1}}\,x_0\Bigr)\\
+&=\frac{\sqrt{\alpha_k}\,(1-\bar\alpha_{k-1})}{1-\bar\alpha_k}\,x_k
++\frac{\sqrt{\bar\alpha_{k-1}}\,\beta_k}{1-\bar\alpha_k}\,x_0.
+\end{aligned}
+$$
+
+因此
+
+$$
+q(x_{k-1} \mid x_k, x_0) = \mathcal{N}\!\left(x_{k-1};\, \tilde{\mu}_k(x_k, x_0),\, \tilde{\beta}_k \mathbf{I}\right).
+$$
 
 ### 4.3 用 $x_0$ 重参数化后验均值
 
@@ -636,3 +676,69 @@ DDIM 走确定性 ODE 轨迹，去除 DDPM 反向过程中的随机项，以少�
 6. Black et al., *π₀: A Vision-Language-Action Flow Model*, arXiv:2410.24164, 2024.
 
 建议阅读顺序：Ho et al. 2020（DDPM 与 $\epsilon$-prediction）→ 论文 Sec. III–IV（动作序列 formulation 与架构）→ 官方 `diffusion_unet_image_policy.py` 中的 `compute_loss` 与 `predict_action` → [`flow_matching_notes.md`](flow_matching_notes.md)（CFM 与 π₀）。
+
+---
+
+## 附录：高斯的若干运算
+
+下文协方差均为单位阵的倍数。证明对每一坐标相同，故写成各向同性形式。
+
+### A.1 仿射
+
+若 $z\sim\mathcal{N}(0,I)$，$\sigma>0$，则
+
+$$
+\mu+\sigma z\sim\mathcal{N}(\mu,\sigma^{2}I).
+$$
+
+$z$ 的密度为 $(2\pi)^{-d/2}\exp(-\|z\|^{2}/2)$。令 $x=\mu+\sigma z$，则 $z=(x-\mu)/\sigma$，雅可比为 $\sigma^{-d}$，密度为
+
+$$
+(2\pi\sigma^{2})^{-d/2}\exp\Bigl(-\frac{\|x-\mu\|^{2}}{2\sigma^{2}}\Bigr),
+$$
+
+即 $\mathcal{N}(\mu,\sigma^{2}I)$。
+
+### A.2 独立和
+
+设 $X\sim\mathcal{N}(\mu_1,\sigma_1^{2}I)$、$Y\sim\mathcal{N}(\mu_2,\sigma_2^{2}I)$ 相互独立。则
+
+$$
+X+Y\sim\mathcal{N}\bigl(\mu_1+\mu_2,\,(\sigma_1^{2}+\sigma_2^{2})I\bigr).
+$$
+
+由 A.1 写 $X=\mu_1+\sigma_1\epsilon_1$、$Y=\mu_2+\sigma_2\epsilon_2$，$\epsilon_1,\epsilon_2$ 独立且服从 $\mathcal{N}(0,I)$。和为 $\mu_1+\mu_2+\sigma_1\epsilon_1+\sigma_2\epsilon_2$。噪声项的交叉矩
+
+$$
+\mathbb{E}\bigl[(\sigma_1\epsilon_1)(\sigma_2\epsilon_2)^{\top}\bigr]
+=\sigma_1\sigma_2\,\mathbb{E}[\epsilon_1]\,\mathbb{E}[\epsilon_2]^{\top}=0,
+$$
+
+故协方差相加，为 $(\sigma_1^{2}+\sigma_2^{2})I$。各坐标独立，化为一维：$\mathcal{N}(\mu,\sigma^{2})$ 的特征函数为 $\exp(it\mu-\sigma^{2}t^{2}/2)$，独立则特征函数相乘，得到 $\mathcal{N}(\mu_1+\mu_2,\sigma_1^{2}+\sigma_2^{2})$。
+
+### A.3 同一变量上的乘积
+
+设 $p_i(x)=\mathcal{N}(x;\mu_i,\sigma_i^{2}I)$，$i=1,2$。记精度 $\tau_i=1/\sigma_i^{2}$。则
+
+$$
+p_1(x)\,p_2(x)\propto\mathcal{N}(x;\mu,\sigma^{2}I),
+$$
+
+其中
+
+$$
+\sigma^{2}=\frac{1}{\tau_1+\tau_2}=\frac{\sigma_1^{2}\sigma_2^{2}}{\sigma_1^{2}+\sigma_2^{2}},
+\qquad
+\mu=\frac{\tau_1\mu_1+\tau_2\mu_2}{\tau_1+\tau_2}.
+$$
+
+乘积的积分一般不为 $1$，故它是高斯函数而非密度；归一化后即上述 $\mathcal{N}(\mu,\sigma^{2}I)$。
+
+略去 $p_i$ 的归一化常数，负对数为
+
+$$
+\frac{1}{2}\sum_{i=1}^{2}\tau_i\|x-\mu_i\|^{2}
+=\frac{\tau_1+\tau_2}{2}\|x\|^{2}-(\tau_1\mu_1+\tau_2\mu_2)\cdot x+\mathrm{const}.
+$$
+
+右端等于 $\frac{\tau_1+\tau_2}{2}\|x-\mu\|^{2}$ 加上与 $x$ 无关的项，其中 $\mu$ 如上。指数因此为 $\exp(-\|x-\mu\|^{2}/(2\sigma^{2}))$。

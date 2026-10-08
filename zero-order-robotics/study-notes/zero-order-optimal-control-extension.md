@@ -4,7 +4,7 @@
 
 ## 摘要
 
-从随机预测采样出发，经高斯平滑、CEM、MPPI，再到朗之万动力学、SVGD、扩散退火与 CMA-ES，可以把零阶最优控制里的常用方法放在同一套玻尔兹曼分布语言下。MPPI 有两条等价读法：用指数权重估计最优控制的均值，以及沿平滑后密度的得分走一步。温度、协方差和噪声日程决定探索与集中；是否更新协方差、是否保留朗之万噪声，则把 CEM、MPPI、CMA 和扩散式 MPC 区分开来。
+从随机预测采样出发，经高斯平滑、CEM、MPPI，再到朗之万动力学、SVGD、扩散退火与 CMA-ES，可以把零阶最优控制里的常用方法放在同一套玻尔兹曼分布语言下。MPPI 估计的是 $p_q\propto q\exp(-J/\lambda)$ 的均值。这一位移等于 log-sum-exp 目标在协方差度量下的自然梯度步，也等于沿高斯平滑后的玻尔兹曼密度、以 $\Sigma$ 为预条件走一步。温度、协方差和噪声日程决定探索与集中；是否更新协方差、协方差绕哪一个均值、是否保留朗之万噪声，则把 CEM、MPPI、CMA 和扩散式 MPC 区分开来。
 
 ## 1. 基础：随机预测采样与高斯平滑
 
@@ -36,18 +36,17 @@ $q$ 通常取当前均值附近的高斯。维数升高后，要靠均匀铺点�
 
 ```math
 J_\sigma(\bar{\mathbf{u}})
-= \mathbb{E}_{\epsilon\sim\mathcal{N}(0,\Sigma)}[J(\bar{\mathbf{u}}+\epsilon)]
-= \int J(\bar{\mathbf{u}}+\epsilon)\,\phi(\epsilon;0,\Sigma)\,d\epsilon
+= \mathbb{E}_{\epsilon\sim\mathcal{N}(0,\Sigma)}[J(\bar{\mathbf{u}}+\epsilon)].
 ```
 
-对均值求导（$J$ 在高斯测度下可积即可交换积分）：
+令 $\mathbf{z}=\bar{\mathbf{u}}+\epsilon$，则 $\mathbf{z}\sim\mathcal{N}(\bar{\mathbf{u}},\Sigma)$。求导只作用在密度上，$\nabla_{\bar{\mathbf{u}}}\log\phi(\mathbf{z};\bar{\mathbf{u}},\Sigma)=\Sigma^{-1}\epsilon$，因此
 
 ```math
 \nabla J_\sigma(\bar{\mathbf{u}})
-= \mathbb{E}_{\epsilon\sim\mathcal{N}(0,\Sigma)}\bigl[J(\bar{\mathbf{u}}+\epsilon)\,\Sigma^{-1}\epsilon\bigr]
+= \mathbb{E}_{\epsilon\sim\mathcal{N}(0,\Sigma)}\bigl[J(\bar{\mathbf{u}}+\epsilon)\,\Sigma^{-1}\epsilon\bigr].
 ```
 
-常数项 $J(\bar{\mathbf{u}})$ 的贡献期望为零，减去它只降方差。平滑后 $J_\sigma$ 可任意阶求导，窄阱会被抹平一些，极小点的位置也可能略有移动。
+$J$ 只需在高斯测度下可积，便可交换积分与求导，不必存在 $\nabla J$。$\mathbb{E}[\Sigma^{-1}\epsilon]=0$，减去 $J(\bar{\mathbf{u}})$ 不改变期望，只降低方差。平滑后 $J_\sigma$ 任意阶可微；窄阱会被抹平一些，极小点也可能略有移动。
 
 ## 2. 交叉熵方法与重要性采样
 
@@ -58,39 +57,37 @@ J_\sigma(\bar{\mathbf{u}})
 1. 初始化 $\mathcal{N}(\boldsymbol{\mu}_0,\Sigma_0)$
 2. 对 $k=0,1,2,\dots$：采样 $\mathbf{u}^{(i)}\sim\mathcal{N}(\boldsymbol{\mu}_k,\Sigma_k)$，计算 $J^{(i)}$
 3. 保留代价最低的约 $\rho\%$ 样本（精英集）
-4. 用精英集重新估计均值和协方差
+4. 用精英集的样本均值更新 $\boldsymbol{\mu}$，再以这个新均值为中心计算协方差
 
-这是交叉熵法的标准做法：让参数分布去拟合精英所在的区域。更新协方差时，用采样那一步的旧均值做中心，几何意义更清楚。
+这是交叉熵法的极大似然更新：高斯族拟合精英的经验分布，协方差围绕更新后的均值。自然梯度形式的 CMA 不同，协方差必须围绕采样时的均值，见 §2.2 末。
 
 ### 2.2 玻尔兹曼分布与指数权重
 
-把「好的控制」写成玻尔兹曼分布
+把低代价控制写成玻尔兹曼分布
 
 ```math
-p^*(\mathbf{u})\propto\exp\bigl(-J(\mathbf{u})/\lambda\bigr)
+p^*(\mathbf{u})\propto\exp\bigl(-J(\mathbf{u})/\lambda\bigr).
 ```
 
-在高斯族里匹配它的均值和协方差，相当于
+它的均值和协方差是对 $p^*$ 的矩。从当前提议 $q=\mathcal{N}(\boldsymbol{\mu}_k,\Sigma_k)$ 抽样时，$p^*$ 的重要性权重正比于 $\exp(-J/\lambda)/q(\mathbf{u})$，不是 $\exp(-J/\lambda)$ 本身。
+
+信息论目标 $\min_q\mathbb{E}_q[J]+\lambda D_{\mathrm{KL}}(q\|p_0)$ 的解是另一个分布。先验取当前高斯时，
 
 ```math
-\boldsymbol{\mu}
-=\frac{\int\mathbf{u}\,p^*(\mathbf{u})\,d\mathbf{u}}{\int p^*(\mathbf{u})\,d\mathbf{u}},
-\qquad
-\Sigma
-=\frac{\int(\mathbf{u}-\boldsymbol{\mu})(\mathbf{u}-\boldsymbol{\mu})^\top p^*(\mathbf{u})\,d\mathbf{u}}{\int p^*(\mathbf{u})\,d\mathbf{u}}
+p_q(\mathbf{u})\propto\exp\bigl(-J(\mathbf{u})/\lambda\bigr)\,q(\mathbf{u}).
 ```
 
-采样来自当前提议 $q=\mathcal{N}(\boldsymbol{\mu}_k,\Sigma_k)$。信息论里的最优分布还乘上这份先验，即 $p_q(\mathbf{u})\propto e^{-J/\lambda}q(\mathbf{u})$，于是重要性权重就是指数代价本身：
+从 $q$ 估计 $p_q$ 的矩，$q$ 与重要性比中的 $q$ 相消，权重才是指数代价：
 
 ```math
 w_i=\exp\bigl(-J(\mathbf{u}^{(i)})/\lambda\bigr),
 \qquad
-\boldsymbol{\mu}_{k+1}=\frac{\sum_{i=1}^N w_i\mathbf{u}^{(i)}}{\sum_{i=1}^N w_i}
+\boldsymbol{\mu}_{k+1}=\frac{\sum_{i=1}^N w_i\mathbf{u}^{(i)}}{\sum_{i=1}^N w_i}.
 ```
 
-协方差同理用 $w_i$ 做加权二阶矩。$\lambda$ 较小、权重很尖时，效果接近只留最精英的一小撮；$\rho\%$ 截断则是固定比例的均匀权。二者都在缩小搜索分布，温度和分位数是两种旋钮。
+按 $p_q$ 的矩估计协方差时，中心是这个新均值。$\lambda$ 较小、权重很尖时，接近只留最精英的一小撮；$\rho\%$ 截断则是固定比例的均匀权。温度和分位数是两种把搜索分布收紧的方式。
 
-只改均值、固定 $\Sigma$，就是下一节的 MPPI。均值与 $\Sigma$ 一起按加权（或按排序权）更新，就是 CMA / MPPI-CMA；长视界下 $\Sigma$ 取块对角，每时刻一块 $n_u\times n_u$。
+只更新均值、固定 $\Sigma$，就是下一节的 MPPI。均值与 $\Sigma$ 一起更新时，指数权给出 MPPI-CMA，排序权给出 CMA-ES。长视界下 $\Sigma$ 取块对角，每时刻一块 $n_u\times n_u$。自然梯度 CMA 的协方差一步必须围绕采样时的均值；CEM 与这里的矩匹配相同，围绕更新后的均值。
 
 ## 3. MPPI 的两种推导路径
 
@@ -126,61 +123,81 @@ q=\mathcal{N}(\mathbf{v},\Sigma)
 ```math
 \mathbf{v}^* = \mathbf{v} + \frac{\sum_{i=1}^N w_i\epsilon^{(i)}}{\sum_{i=1}^N w_i},
 \qquad
-w_i = \exp\bigl(-J(\mathbf{v}+\epsilon^{(i)})/\lambda\bigr)
+w_i = \exp\bigl(-J(\mathbf{v}+\epsilon^{(i)})/\lambda\bigr).
 ```
 
-同一期望也是 log-sum-exp 平滑目标
+同一位移来自 log-sum-exp 平滑
 
 ```math
 J_{\Sigma,\lambda}(\mathbf{v})
 =-\lambda\log\mathbb{E}_{\epsilon\sim\mathcal{N}(0,\Sigma)}\bigl[\exp(-J(\mathbf{v}+\epsilon)/\lambda)\bigr]
 ```
 
-对 $\mathbf{v}$ 的梯度。$\lambda\to\infty$ 时回到 §1.3 的 $J_\sigma$；$\lambda\to 0$ 时接近硬最小。实现上常减 $\min_i J^{(i)}$ 再取指数，只防溢出。样本极多时加权平均几乎没有随机性，需要靠 $\lambda$、$\Sigma$ 或重启保持探索。
+的自然梯度，而不是它的欧氏梯度。对 $\mathbf{v}$ 求导只作用在高斯密度上，
+
+```math
+\nabla J_{\Sigma,\lambda}(\mathbf{v})
+=-\lambda\,\Sigma^{-1}
+\frac{\mathbb{E}[\epsilon\exp(-J(\mathbf{v}+\epsilon)/\lambda)]}
+{\mathbb{E}[\exp(-J(\mathbf{v}+\epsilon)/\lambda)]}.
+```
+
+均值参数的 Fisher 信息为 $F=\Sigma^{-1}$。步长取 $1/\lambda$ 时，
+
+```math
+\mathbf{v}-\frac{1}{\lambda}F^{-1}\nabla J_{\Sigma,\lambda}(\mathbf{v})
+=\mathbf{v}+\frac{\mathbb{E}[w\epsilon]}{\mathbb{E}[w]},
+```
+
+正是上面的 $\mathbf{v}^*$。$\lambda\to\infty$ 时 $J_{\Sigma,\lambda}$ 回到 §1.3 的 $J_\sigma$；$\lambda\to 0$ 时接近硬最小。实现上常减 $\min_i J^{(i)}$ 再取指数，只防溢出。样本极多时加权平均几乎没有随机性，需要靠 $\lambda$、$\Sigma$ 或重启保持探索。
 
 ### 3.2 朗之万动力学
 
-从密度 $p$ 中采样的过阻尼朗之万离散为
+目标密度 $p$ 的过阻尼朗之万方程是
 
 ```math
-\mathbf{u}_{k+1} = \mathbf{u}_k + \alpha\nabla\log p(\mathbf{u}_k) + \sqrt{2\alpha}\,\mathbf{z}_k
+\mathrm{d}\mathbf{u}=\nabla\log p(\mathbf{u})\,\mathrm{d}t+\sqrt{2}\,\mathrm{d}W.
 ```
 
-$p^*\propto\exp(-J/\lambda)$ 的得分含 $\nabla J$，零阶设定下并不直接可用。改为对高斯平滑后的密度求得分：
+Euler–Maruyama 离散为
+
+```math
+\mathbf{u}_{k+1}=\mathbf{u}_k+\alpha\nabla\log p(\mathbf{u}_k)+\sqrt{2\alpha}\,\mathbf{z}_k.
+```
+
+$p^*\propto\exp(-J/\lambda)$ 的得分含 $\nabla J$，零阶设定下并不直接可用。改为高斯平滑后的密度
 
 ```math
 p_\sigma(\mathbf{u})
-=\int p^*(\mathbf{u}')\,\mathcal{N}(\mathbf{u}\mid\mathbf{u}',\Sigma)\,d\mathbf{u}'
+=\int p^*(\mathbf{u}')\,\mathcal{N}(\mathbf{u}\mid\mathbf{u}',\Sigma)\,d\mathbf{u}'.
 ```
 
-```math
-\nabla_{\mathbf{u}}\mathcal{N}(\mathbf{u}\mid\mathbf{u}',\Sigma)
-=-\Sigma^{-1}(\mathbf{u}-\mathbf{u}')\,\mathcal{N}(\mathbf{u}\mid\mathbf{u}',\Sigma)
-```
+核的得分为 $\nabla_{\mathbf{u}}\log\mathcal{N}(\mathbf{u}\mid\mathbf{u}',\Sigma)=-\Sigma^{-1}(\mathbf{u}-\mathbf{u}')$，因此
 
 ```math
 \nabla\log p_\sigma(\mathbf{u})
 =-\Sigma^{-1}
-\frac{\int p^*(\mathbf{u}')(\mathbf{u}-\mathbf{u}')\mathcal{N}(\mathbf{u}\mid\mathbf{u}',\Sigma)\,d\mathbf{u}'}{p_\sigma(\mathbf{u})}
+\frac{\int p^*(\mathbf{u}')(\mathbf{u}-\mathbf{u}')\,\mathcal{N}(\mathbf{u}\mid\mathbf{u}',\Sigma)\,d\mathbf{u}'}{p_\sigma(\mathbf{u})}.
 ```
 
-令 $\epsilon=\mathbf{u}'-\mathbf{u}$，核对称，用 $\epsilon\sim\mathcal{N}(0,\Sigma)$ 估计积分：
+令 $\epsilon=\mathbf{u}'-\mathbf{u}$。高斯核关于 $\epsilon$ 对称，$\mathcal{N}(\mathbf{u}\mid\mathbf{u}+\epsilon,\Sigma)=\phi(\epsilon)$，且 $\mathbf{u}-\mathbf{u}'=-\epsilon$，分子里的负号与前面的负号相消：
+
+```math
+\nabla\log p_\sigma(\mathbf{u})
+=\Sigma^{-1}
+\frac{\mathbb{E}[p^*(\mathbf{u}+\epsilon)\,\epsilon]}{\mathbb{E}[p^*(\mathbf{u}+\epsilon)]}.
+```
+
+$p^*\propto\exp(-J/\lambda)$ 时，用 $\epsilon^{(i)}\sim\mathcal{N}(0,\Sigma)$ 估计，
 
 ```math
 \nabla\log p_\sigma(\mathbf{u})
 \approx\Sigma^{-1}\frac{\sum_{i=1}^N w_i\epsilon^{(i)}}{\sum_{i=1}^N w_i},
 \qquad
-w_i=\exp\bigl(-J(\mathbf{u}+\epsilon^{(i)})/\lambda\bigr)
+w_i=\exp\bigl(-J(\mathbf{u}+\epsilon^{(i)})/\lambda\bigr).
 ```
 
-于是
-
-```math
-\mathbf{v}+\frac{\sum_i w_i\epsilon^{(i)}}{\sum_i w_i}
-=\mathbf{v}+\Sigma\nabla\log p_\sigma(\mathbf{v})
-```
-
-正是 MPPI 更新：沿 $\log p_\sigma$ 在 $\Sigma$ 度量下走一步。加上 $\sqrt{2\alpha}\,\mathbf{z}_k$ 就是完整朗之万；MPPI 取确定性漂移，把随机性留在每步的采样 $\epsilon^{(i)}$ 里。
+于是 $\Sigma\nabla\log p_\sigma(\mathbf{v})=\sum_i w_i\epsilon^{(i)}/\sum_i w_i$。MPPI 的均值更新就是 $\mathbf{v}+\Sigma\nabla\log p_\sigma(\mathbf{v})$：在 $\Sigma$ 度量下沿平滑得分走一步，步长已经吸收在预条件里。配套的预条件朗之万噪声是 $\sqrt{2}\,\Sigma^{1/2}\mathbf{z}$，不是标量步长下的 $\sqrt{2\alpha}\,\mathbf{z}$。MPPI 丢掉这一项，只保留漂移；随机性来自每步重新采样的 $\epsilon^{(i)}$。
 
 ## 4. 朗之万动力学与扩散模型
 
@@ -192,7 +209,7 @@ w_i=\exp\bigl(-J(\mathbf{u}+\epsilon^{(i)})/\lambda\bigr)
 \gamma\frac{d\mathbf{x}}{dt}=-\nabla U(\mathbf{x})+\sqrt{2\gamma k_B T}\,\boldsymbol{\xi}(t)
 ```
 
-$U=-\log p$ 时与上一节的得分形式一致。温度降低，样本集中到 $U$ 的低谷，也就是模拟退火。
+$U=-\log p$、$\gamma=1$、$k_B T=1$ 时，这就是上一节的过阻尼朗之万。温度降低，样本集中到 $U$ 的低谷，也就是模拟退火。
 
 ### 4.2 得分匹配
 
@@ -250,19 +267,14 @@ q(\mathbf{u}_t\mid\mathbf{u}_{t-1})=\mathcal{N}(\mathbf{u}_t\mid\sqrt{1-\beta_t}
 
 逆向 $p_\theta(\mathbf{u}_{t-1}\mid\mathbf{u}_t)$ 由网络给出。这与「用得分做退火朗之万」是同一家族。
 
-在线 MPC 更直接的做法是把退火加在采样协方差上。时间维（优化迭代 $i$）和视界维（距当前时刻的步数 $h$）各自从大噪声收到小噪声：
+在线 MPC 不训练得分网络，而是按扩散退火缩小 MPPI 的采样协方差。Xue et al. 取各向同性核：扩散阶段 $i$ 从 $N$ 降到 $1$，视界内步数 $h=0,\ldots,H$，
 
 ```math
-\Sigma_{\mathrm{time}}^i
-=\sigma_{\max}^2\exp\left(-\frac{N_{\mathrm{time}}-i}{\beta_{\mathrm{time}}N_{\mathrm{time}}}\log\frac{\sigma_{\max}^2}{\sigma_{\min}^2}\right)I
+\Sigma^{i}_{t+h}
+=\exp\left(-\frac{N-i}{\beta_1 N}-\frac{H-h}{\beta_2 H}\right)I.
 ```
 
-```math
-\Sigma_{\mathrm{space}}^h
-=\sigma_0^2\exp\left(-\frac{H-h}{\beta_{\mathrm{space}}H}\log\frac{\sigma_0^2}{\sigma_H^2}\right)I
-```
-
-合成为 $\Sigma_{t+h}^i=\Sigma_{\mathrm{time}}^i\Sigma_{\mathrm{space}}^h$（均为单位阵倍数时即方差相乘）。靠近当前控制、靠近迭代末期时更贪心，远处、早期更敢探索。
+$i=N$ 时时间项为零，噪声最大；$i$ 降到 $1$ 时时间项约为 $-1/\beta_1$，噪声最小。$h=H$ 时空间项为零，远处更散；$h=0$ 时空间项约为 $-1/\beta_2$，当前步更尖。两项写在同一个指数里，等价于两个标量尺度相乘。
 
 ## 7. 主流零阶优化算法全景
 
@@ -293,7 +305,7 @@ q(\mathbf{u}_t\mid\mathbf{u}_{t-1})=\mathcal{N}(\mathbf{u}_t\mid\sqrt{1-\beta_t}
 
 1. 高斯平滑给出不依赖 $\nabla J$ 的梯度。
 2. 指数权重把 CEM 的精英更新连到 MPPI 的均值更新。
-3. 平滑密度的得分与 MPPI 同一步；加上噪声与退火就进入朗之万和扩散。
+3. 平滑得分在 $\Sigma$ 预条件下与 MPPI 同一步；配上 $\sqrt{2}\,\Sigma^{1/2}$ 噪声并退火，就进入朗之万和扩散。
 4. CMA 在同一高斯上再更新 $\Sigma$。
 
 ### 8.3 可延伸的方向
@@ -302,7 +314,7 @@ q(\mathbf{u}_t\mid\mathbf{u}_{t-1})=\mathcal{N}(\mathbf{u}_t\mid\sqrt{1-\beta_t}
 
 ## 结论
 
-MPPI 既可以看作指数变换下的均值估计（log-sum-exp），也可以看作对平滑玻尔兹曼走一步确定性朗之万漂移。
+MPPI 是 $p_q$ 的指数加权均值。它等于 log-sum-exp 目标的自然梯度步 $-\Sigma\nabla J_{\Sigma,\lambda}/\lambda$，也等于预条件朗之万的确定性漂移 $\mathbf{v}+\Sigma\nabla\log p_\sigma$。
 
 ```text
 随机采样 → CEM（精英或指数权）→ MPPI

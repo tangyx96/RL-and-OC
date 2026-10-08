@@ -1,302 +1,239 @@
-# World Action Model（WAM）与 Fast-WAM 算法笔记
+# World Action Model（WAM）算法笔记
 
-下文以 Yuan 等（2026）的 [Fast-WAM](https://arxiv.org/abs/2603.16666) 为主线，梳理 World Action Model 的概率建模、训练目标与推理接口。官方实现：[yuantianyuan01/FastWAM](https://github.com/yuantianyuan01/FastWAM)。标准 visuomotor 扩散见 [`diffusion_policy_notes.md`](diffusion_policy_notes.md)，离散 VLA 原型见 [`openvla_notes.md`](openvla_notes.md)。
+下文把 WAM 写成在动作条件分布之外再引入未来观测的生成模型，并分开两件容易缠在一起的事：训练时是否用未来视觉作监督，推理时是否再抽样这段未来视觉。动作边缘上的行为克隆见 [`vla_notes.md`](vla_notes.md)；速度场回归见 [`flow_matching_notes.md`](flow_matching_notes.md)；DDPM 的 $\epsilon$-prediction 见 [`diffusion_policy_notes.md`](diffusion_policy_notes.md) 第四节。训练损失与推理抽样的分离，以 Yuan 等（2026）的 [Fast-WAM](https://arxiv.org/abs/2603.16666) 为可核对实例，实现见 [yuantianyuan01/FastWAM](https://github.com/yuantianyuan01/FastWAM)。
 
 ---
 
 ## 一、算法定位
 
-World Action Model（WAM）将未来视觉预测与动作生成纳入同一生成式框架，旨在弥补标准 Vision-Language-Action（VLA）模型仅继承静态图文先验、未显式建模「动作如何改变观测」这一局限。Fast-WAM 进一步考察：WAM 的性能增益究竟来自训练阶段的视频联合建模，还是来自推理阶段对未来观测的显式生成。
+World Action Model（WAM）仍是离线模仿。控制时要用的对象与 VLA、Diffusion Policy 相同，是专家动作块的条件分布。差别在生成模型里是否出现未来视觉：VLA 只拟合动作边缘；WAM 把未来画面写成中间变量或联合变量，再用它支持动作预测。
 
-| 特性 | VLA（如 $\pi_0$、OpenVLA） | WAM（imagine-then-execute） | Fast-WAM |
-|------|----------------------------|------------------------------|----------|
-| 训练信号 | 专家动作（可加 VLM 预训练） | 专家动作 + 未来视频 | 同左 |
-| 策略接口 | $p(a \mid o, l)$ | 经 $v_{1:T}$ 的积分分解 | $p(a_{1:H} \mid z(o, l))$ |
-| 世界建模 | 无显式 future video | 训练并在推理期生成未来帧 | 训练期 $\mathcal{L}_{\mathrm{vid}}$；推理期不生成未来帧 |
-| 推理 | 单次前向或少量 flow 步 | 视频与动作双重去噪 | 首帧编码 + 动作去噪 |
+这里没有奖励，也没有价值函数。未来视觉不是规划意义下的回报，而是演示里可以观察到的另一条序列。
 
-WAM 针对的是标准 VLA 仅继承静态图文先验、未显式建模「动作如何改变观测」。Fast-WAM 把这一增益拆成两个因素：训练期的视频联合建模，与推理期对未来观测的显式生成。
+| 特性 | VLA / Diffusion Policy | 因果 WAM | 联合 WAM | Fast-WAM |
+|------|------------------------|----------|----------|----------|
+| 部署时如何得到动作 | 拟合 $p(\mathbf{A}\mid o,l)$ | 先抽样未来视觉，再以之为条件 | 与未来视觉联合抽样，再留下动作 | $p(\mathbf{A}\mid z(o,l))$ |
+| 训练是否含未来视觉 | 否 | 是 | 是 | 是 |
+| 推理是否抽样未来视觉 | 否 | 是 | 是 | 否 |
+| 动作头 | 离散 token、扩散或 flow | 以生成的未来为条件 | 与视频联合去噪 | 以单次编码的 $z$ 为条件的 flow |
+
+经典单步策略 $p(\mathbf{a}\mid o)$ 是 $H=1$、且未来视觉不出现时的特例。
 
 ---
 
 ## 二、问题形式化
 
-### 2.1 标准 visuomotor 策略
+### 2.1 动作边缘
 
-记当前观测 $o$（多相机图像，可含本体感觉）、语言指令 $l$、动作序列 $a_{1:H}$（$H$ 为 action horizon）。标准 visuomotor 策略学习
+记当前观测为 $o$（可含多相机图像与本体感觉），语言指令为 $l$，动作块为 $\mathbf{A}=a_{1:H}\in\mathbb{R}^{H\times D_a}$。专家诱导
 
 $$
-p_\theta(a_{1:H} \mid o, l).
+p^{\ast}(\mathbf{A}\mid o,l).
 \tag{1}
 $$
 
-式 (1) 是 VLA 与 Diffusion Policy 的直接优化对象：给定当前上下文，输出一段未来动作。
+式 (1) 是 [`vla_notes.md`](vla_notes.md) 与 Diffusion Policy 的直接优化对象。负对数似然与条件正向 KL 的等价见 [`diffusion_policy_notes.md`](diffusion_policy_notes.md) 第 2.2 节。WAM 不替换这个边缘；它改变的是用什么生成过程去参数化它。
 
-### 2.2 Imagine-then-execute 的 WAM 分解
+### 2.2 未来观测
 
-引入未来视觉序列 $v_{1:T}$（$T$ 为预测帧数），多数 WAM 采用如下因子分解：
+记未来视觉序列为 $v_{1:T}$，$T$ 为预测帧数。引入 $v_{1:T}$ 之后，模型可以写联合分布 $p(v_{1:T},\mathbf{A}\mid o,l)$。控制只消费动作边缘
 
 $$
-p(a_{1:H} \mid o, l)
-= \int p(v_{1:T} \mid o, l)\, p(a_{1:H} \mid o, l, v_{1:T})\, \mathrm{d}v_{1:T}.
+p(\mathbf{A}\mid o,l)
+=\int p(v_{1:T},\mathbf{A}\mid o,l)\,\mathrm{d}v_{1:T}.
 \tag{2}
 $$
 
-式 (2) 对应「先预测未来观测，再以其为条件生成动作」的两阶段决策。实现上主要有两类：
+$v_{1:T}$ 被积分掉之后，策略接口仍是式 (1)。是否在部署时真的抽出 $v_{1:T}$，是抽样路径的选择，不是式 (2) 本身所要求的。
 
-- **Joint modeling**：$v_{1:T}$ 与 $a_{1:H}$ 在同一扩散或 flow 过程中联合去噪（如 Motus、Cosmos Policy）；
-- **Causal / IDM**：先完成 $v_{1:T}$ 的生成，再以其为条件预测 $a_{1:H}$（如 LingBot-VA、Vidar）。
+### 2.3 因果分解
 
-Fast-WAM 的受控对比省略外层 chunk 级自回归 rollout，以便在固定 horizon 内隔离上述两类因素。
-
-### 2.3 Fast-WAM 的直接策略接口
-
-Fast-WAM 在推理阶段回到式 (1) 的直接接口，但用经视频联合训练得到的 latent 表征 $z(o,l)$ 参数化动作分布：
+按链式法则，式 (2) 写成
 
 $$
-p_\theta(a_{1:H} \mid o, l) = p_\theta(a_{1:H} \mid z(o, l)).
+p(\mathbf{A}\mid o,l)
+=\int p(v_{1:T}\mid o,l)\,
+p(\mathbf{A}\mid o,l,v_{1:T})\,
+\mathrm{d}v_{1:T}.
 \tag{3}
 $$
 
-与 imagine-then-execute 范式的根本区别在于：$z(o,l)$ 由 video DiT 对当前首帧 clean latent 作**单次前向编码**得到，推理阶段不对 $v_{1:T}$ 作迭代采样。训练阶段仍保留 $\mathcal{L}_{\mathrm{vid}}$，故 $z$ 所张成的函数类在优化过程中受到未来视频监督；部署阶段则无需承担未来视频去噪的计算开销。
+因果模型按这个顺序抽样，即 imagine-then-execute：先从 $p(v_{1:T}\mid o,l)$ 抽样，再以抽样结果为条件生成动作。逆动力学式的实现（IDM）走的就是这条路径：视频分支先完成去噪，动作分支读生成结果。LingBot-VA、Vidar 属于这一类。
 
-### 2.4 两个可分离因素
+式 (3) 里的视频因子以 $(o,l)$ 为条件，不以内层动作 $\mathbf{A}$ 为条件。它描述的是给定当前上下文后的未来画面，不是 $p(o'\mid o,\mathbf{a})$ 那种动作条件下的转移核。
 
-| 因素 | 训练 | 推理 | 典型实现 |
-|------|------|------|----------|
-| 视频联合建模 | $\mathcal{L}_{\mathrm{vid}}>0$ | — | 对未来帧 latent 作 flow matching |
-| 显式未来生成 | 可选（attention mask 不同） | 对 $v_{1:T}$ 迭代去噪 | Joint / IDM 变体 |
-| Fast-WAM | 保留 | 省略 | 仅首帧在 $t=0$ 通过 video backbone |
+### 2.4 联合生成
 
-论文的受控实验表明：移除 $\mathcal{L}_{\mathrm{vid}}$ 所致的性能下降，显著大于移除推理期未来生成；即训练目标对最终控制性能的贡献，大于测试期想象机制。
+另一类模型直接拟合 $p(v_{1:T},\mathbf{A}\mid o,l)$，在同一次去噪中抽出 $(v_{1:T},\mathbf{A})$，再留下动作。动作边缘仍是式 (2)，因而也写成式 (3)。联合去噪不按式 (3) 的抽样顺序进行：生成过程中，视频 token 与动作 token 可以互相作为条件。Motus 属于这一类。
 
----
+因此，因果 WAM 与联合 WAM 部署时都会产生未来视觉的样本。二者的差别是未来视觉与动作在生成过程中的条件关系，不是训练数据里有没有未来帧。
 
-## 三、模型结构
+### 2.5 两个可分开的因子
 
-### 3.1 组件
+标准 WAM 把下面两件事绑在同一个生成过程上。
 
-Fast-WAM 以 [Wan2.2-5B](https://arxiv.org/abs/2503.20314) 视频 Diffusion Transformer 为骨干：
+1. **训练因子。** 未来视觉进入损失函数，参数在 $v_{1:T}$ 上受到监督。
+2. **推理因子。** 部署时从视频分支迭代抽样，动作分布以该样本为条件。
 
-| 模块 | 功能 | 规模（论文） |
-|------|------|-------------|
-| Video DiT | 世界建模 backbone | 5B |
-| Action Expert DiT | 动作 chunk 生成 | 1B（$d_a=1024$） |
-| T5 文本编码器 | 指令 $l \mapsto$ context | 复用 Wan |
-| Video VAE | 图像/视频 $\mapsto$ latent token | 复用 Wan |
-
-总参数量约 6B。Action Expert 与 Video DiT 结构同构但宽度缩减（hidden 3072 $\to$ 1024），二者经 Mixture-of-Transformer（MoT）在若干层共享 attention。
-
-### 3.2 Token 分组
-
-每个训练样本包含三类 token：
-
-1. **首帧 clean latent** $z_0$：当前观测经 VAE 编码，作为共享视觉锚点；
-2. **未来 noisy video latent** $z_{1:T}$：仅训练期使用，参与 $\mathcal{L}_{\mathrm{vid}}$；
-3. **Action tokens** $a_{1:H}$：经线性嵌入后的动作 chunk，参与 $\mathcal{L}_{\mathrm{act}}$。
-
-多相机图像在 VAE 编码前拼接为单幅宽图；时间维 $4\times$ 下采样，每个 chunk 含 9 帧视频、$H=32$ 步动作。
-
-### 3.3 结构化 attention mask
-
-记 video token 序列长 $L_v$，action 序列长 $L_a$。布尔 mask $M \in \{0,1\}^{(L_v+L_a)\times(L_v+L_a)}$ 规定：
-
-$$
-M_{ij} = 1 \quad \Rightarrow \quad \text{第 } i \text{ 个 query 可 attend 至第 } j \text{ 个 key}.
-$$
-
-构造规则（与实现 `_build_mot_attention_mask` 一致）：
-
-- **Video $\to$ Video**：由 `first_frame_causal` 模式决定（未来帧之间双向 attention，且可 attend 首帧）；
-- **Action $\to$ Action**：chunk 内全连接（双向）；
-- **Action $\to$ Video**：仅允许 attend 首帧 token，禁止 attend 未来 noisy video token；
-- **首帧 $\to$ ***：不允许 attend 任何其他 token（纯上下文锚点，不接收 future 信息）。
-
-形式化地，设首帧占 $L_0 = \min(\text{tokens\_per\_frame}, L_v)$ 个 video 位置，则对 action 行 $i \in \{L_v+1,\ldots,L_v+L_a\}$：
-
-$$
-M_{i,j} = \begin{cases}
-1 & j \le L_0 \\
-0 & L_0 < j \le L_v \\
-1 & j > L_v \quad (\text{action 分支内部})
-\end{cases}
-$$
-
-**设计动机**：$\mathcal{L}_{\mathrm{vid}}$ 驱动 backbone 学习环境动力学；$\mathcal{L}_{\mathrm{act}}$ 在**与部署一致的可见信息**（当前帧与语言）下预测动作，防止 action 分支在训练期访问未来 video token 而造成信息泄漏，从而掩盖表征质量不足。
-
-### 3.4 训练与推理计算图
-
-**训练**：三类 token 同时存在，video 与 action 分支经 MoT 联合前向；首帧 latent 可注入 clean 值（`first_frame_latents`）。
-
-**Fast-WAM 推理**（`infer_action`）：
-
-1. 将当前图像编码为 `first_frame_latents`；
-2. Video Expert 在 $t_{\mathrm{video}}=0$（无噪声）下单次前向，得到 KV cache；
-3. Action Expert 以该 cache 为 cross-attention 上下文，对动作 latent 作 $N_{\mathrm{act}}$ 步 flow 去噪；
-4. 不实例化未来 video token，不执行 video 迭代。
-
-相对 Joint（580 ms）与 IDM（810 ms），Fast-WAM 在 RTX 5090D 上约 190 ms（含文本与 VAE 编码）；主要增益来自省略 $N_{\mathrm{vid}}$ 步视频采样。
+只看到一个 imagine-then-execute 系统的成功率，无法区分增益来自哪一个因子：同一个模型既在训练时拟合未来视觉，又在测试时把它抽出来。Fast-WAM 的形式化目的，就是让这两个因子可以单独开关。比较限定在单个动作块内，外层按 chunk 自回归展开的 rollout 被省略。
 
 ---
 
-## 四、Flow Matching 训练目标
+## 三、速度场上的两项损失
 
-Fast-WAM 对动作与视频采用同一套 conditional flow matching（CFM），与 $\pi_0$ 等 VLA flow 模型同族，而非 DDPM 的 $\epsilon$-prediction。CFM 的一般形式化见 [`flow_matching_notes.md`](flow_matching_notes.md)；DDPM 见 [`diffusion_policy_notes.md`](diffusion_policy_notes.md) 第四节。
+视频与动作都用 conditional flow matching 参数化。线性路径、条件速度 $\epsilon-y$ 以及它与边缘场的梯度一致性，见 [`flow_matching_notes.md`](flow_matching_notes.md)。记号 $\mathcal{L}_{\mathrm{CFM}}$ 与该笔记相同，指对条件速度的回归。
 
-### 4.1 从概率路径到速度场
-
-设数据 $y \sim q(y)$（可为动作或 video latent）。构造线性插值路径（Rectified Flow / 最优传输直线路径的特例）：
+设目标变量为 $y$，噪声 $\epsilon\sim\mathcal{N}(0,I)$，路径为
 
 $$
-y_t = (1-t)\, y + t\, \epsilon, \qquad \epsilon \sim \mathcal{N}(0, I),\; t \in (0,1).
+y_t=(1-t)\,y+t\,\epsilon.
+$$
+
+两条分支共用这条路径和条件速度 $\epsilon-y$，时间分布不同。动作分支的 $t$ 在 $(0,1)$ 上均匀。视频分支先取均匀随机数 $u\in(0,1)$，再令
+
+$$
+t=\frac{5u}{1+4u}.
+$$
+
+条件回归为
+
+$$
+\mathcal{L}_{\mathrm{CFM}}(y)
+=\mathbb{E}\big[\|f_\theta(y_t,t,o,l)-(\epsilon-y)\|^2\big].
 \tag{4}
 $$
 
-对 $t$ 求导，条件速度场为常数
+训练时，式 (4) 中的范数平方乘以第 6 节的时间权重。该权重只依赖 $t$，因此只改变不同 $t$ 的相对比重。
+
+动作项取 $y=\mathbf{A}$。视频项取 $y=\zeta_{1:T}$，其中 $\zeta_{1:T}$ 是未来帧经预训练视频 VAE 得到的 latent，不是第 5 节里用于动作条件的编码 $z(o,l)$。总目标
 
 $$
-u_t(y_t \mid y) = \frac{\mathrm{d} y_t}{\mathrm{d} t} = \epsilon - y.
+\mathcal{L}
+=\mathcal{L}_{\mathrm{CFM}}(\mathbf{A})
++\lambda\,\mathcal{L}_{\mathrm{CFM}}(\zeta_{1:T}).
 \tag{5}
 $$
 
-在路径 (4) 下，各样本对应的速度与 $t$ 无关，训练目标简化为回归 $f_\theta(y_t, t, o, l) \approx \epsilon - y$。
+$\lambda=0$ 时，架构与推理路径可以保持不变，被拿掉的只有未来视觉上的监督。式 (5) 因此是第 2.5 节训练因子的损失形式。它仍是模仿学习：两项都拟合演示中的条件生成分布，不出现回报。
 
-**理论依据**（Lipman et al., 2023）：边缘速度场 $u_t(y_t) = \mathbb{E}[u_t(y_t \mid y) \mid y_t]$ 难以直接估计；但条件目标
+默认掩码下，视频 token 不读取动作 token，视频项拟合 $p(\zeta_{1:T}\mid o,l)$。$p(v\mid o,\mathbf{a})$ 还要求视频分支读取动作。
 
-$$
-\mathcal{L}_{\mathrm{CFM}}(\theta) = \mathbb{E}_{y,\epsilon,t,y_t}\big[\| v_\theta(y_t,t) - (\epsilon - y) \|^2\big]
-$$
+---
 
-在适当正则条件下与边缘 flow matching 目标梯度一致。Fast-WAM 论文式 (5)–(6) 即此形式，网络 $f_\theta$ 同时以观测与语言为条件。
+## 四、条件里允许出现的变量
 
-### 4.2 与 scheduler 实现的对应
+注意力掩码规定每个查询的条件集合。把它写成概率语言：掩码决定式 (4) 里的 $f_\theta$ 在计算哪一个条件分布。
 
-官方 `WanContinuousFlowMatchScheduler` 采用离散时间步 $\sigma \in [0,1]$ 与 shift 变换 $\phi$：
+Fast-WAM 训练时有三类 token：当前帧的干净 latent、未来帧的加噪 latent、动作块的加噪 token。语言由文本编码器经交叉注意力进入各类 token。记视频位置长度为 $L_v$，其中当前帧占前 $L_0$ 个位置。动作查询 $i$ 对视频位置 $j$ 的可见性为
 
 $$
-\phi(u; s) = \frac{s u}{1 + (s-1)u}, \qquad u \sim \mathcal{U}(0,1),\; \sigma = \phi(u; s_{\mathrm{shift}}).
-$$
-
-加噪与回归目标：
-
-$$
-\tilde{y} = (1-\sigma)\, y + \sigma\, \epsilon, \qquad
-\text{target} = \epsilon - y.
+M_{ij}
+=
+\begin{cases}
+1 & j\le L_0,\\
+0 & L_0<j\le L_v.
+\end{cases}
 \tag{6}
 $$
 
-推理阶段以 Euler 法更新 $\tilde{y} \leftarrow \tilde{y} + f_\theta(\tilde{y}, t)\, \Delta\sigma$。论文中 $t \in (0,1)$ 与实现中 $\sigma = t/T$（$T=1000$）相差一个尺度因子，不改变「回归 $\epsilon - y$」这一训练本质。
+动作查询在动作块内部双向可见，读到的是同一噪声水平下的其余动作 token。当前帧 token 不读取未来帧，也不读取动作。于是动作损失的条件是当前帧、语言，以及这些动作 token；未来视觉不在这个条件里。
 
-训练时对 $t$ 采用 logit-normal 采样（经 $\phi$ 变换），并对不同 $t$ 加权：
+若训练时让动作查询看见未来帧，优化的是 $p(\mathbf{A}\mid o,l,v_{1:T})$ 的某个生成替代。部署时若不再提供 $v_{1:T}$，测试条件与训练条件不一致，动作分支可以靠泄漏的未来帧完成预测，从而不再被迫把动力学信息放进当前帧的表示里。式 (6) 把训练条件收成与 Fast-WAM 部署条件相同的集合。
+
+联合变体把动作查询的可见范围扩到全部视频位置。推理时因此实例化未来视频 latent，并与动作一起去噪。视频查询不读取动作 token，视频项的条件是 $(o,l)$。因果变体先对视频去噪，再让动作查询读取生成的 $\hat v_{1:T}$，抽样顺序对应式 (3)。该变体在训练时以概率 $0.5$ 对真实未来帧加噪，是为了缩小训练条件与推理条件的差距：推理时动作读到的是生成视频，不是干净的演示帧。
+
+---
+
+## 五、推理时不抽样未来视觉
+
+### 5.1 直接策略接口
+
+Fast-WAM 在部署时回到式 (1)，并用视频骨干的一次前向定义条件：
 
 $$
-w(t) \propto \exp\!\left(-2\left(\frac{t - T/2}{T}\right)^2\right),
-$$
-
-以强调中间噪声水平上的梯度贡献——与 DDPM 中丢弃时间步权重 $w_k$ 的经验类似，属于实现层面的稳定性取舍。
-
-### 4.3 分项损失
-
-对动作 $y = a_{1:H}$：
-
-$$
-\mathcal{L}_{\mathrm{act}} = \mathbb{E}\left[ w(t_a)\, \big\| f_\theta(a_t, t_a, o, l) - (\epsilon_a - a_{1:H}) \big\|_2^2 \right].
+p_\theta(\mathbf{A}\mid o,l)
+=p_\theta(\mathbf{A}\mid z(o,l)).
 \tag{7}
 $$
 
-对未来 video latent $y = z_{1:T}$（首帧在 loss 中可剔除，因其保持 clean）：
+$z(o,l)$ 由当前帧的干净 latent 在视频时间 $t=0$ 上单次前向得到。计算图中不实例化 $\zeta_{1:T}$，也不对视频做迭代去噪。动作块仍由 action expert 沿 flow 的 Euler 步生成，前缀表示只编码一次。这个接口与 π₀ 相同：VLM 或视频骨干提供条件，动作头迭代；差别是 $z$ 的参数在式 (5) 的视频项下更新过。
+
+因此 Fast-WAM 的部署分布不是式 (3)。式 (3) 要求一个 $v_{1:T}$ 的样本。式 (7) 里的未来视觉只通过训练改变 $z(\cdot)$ 的函数类，不作为推理时的随机变量。
+
+### 5.2 四个变体
+
+在同一骨干上只切换第 2.5 节的两个因子：
+
+| 变体 | $\lambda$ | 推理时抽样 $v_{1:T}$ | 动作的条件 |
+|------|--------|----------------------|------------|
+| Fast-WAM | $>0$ | 否 | $z(o,l)$ |
+| Joint | $>0$ | 是 | 全部视频 token |
+| IDM | $>0$ | 是 | 生成的 $\hat v_{1:T}$ |
+| 无视频共训 | $0$ | 否 | 同 Fast-WAM，但 $z$ 未受视频损失约束 |
+
+前三行共享视频监督，差别在推理因子。最后一行与第一行共享推理路径，差别在训练因子。
+
+### 5.3 比较所识别的量
+
+该设计识别的是两个因子对成功率的贡献，不是某一套延迟或某一张成绩表。在 RoboTwin 2.0 上，Fast-WAM、Joint、IDM 的平均成功率分别为 $91.8\%$、$90.6\%$、$91.3\%$，去掉视频共训后为 $83.8\%$。在 LIBERO 四套件平均上，相应数字为 $97.6\%$、$98.5\%$、$98.0\%$ 与 $93.5\%$，无共训的下降主要在 Spatial 与 Long。真机毛巾折叠上，无共训的成功率降到 $10\%$，三个含视频损失的变体彼此接近。
+
+因此，在论文所考察的单 chunk、固定 horizon 上，关掉 $\lambda$ 造成的变化大于改换推理时是否抽样 $v_{1:T}$。Joint 与 IDM 在部分任务上仍略高，说明推理因子的贡献不是零。抽样 $v_{1:T}$ 的代价是多走视频分支的去噪步；Fast-WAM 省去的是这些步，不是式 (5) 里的视频项。
+
+这些数字都在没有额外具身预训练的设定下得到。它们说明视频损失可以塑造 $z$，不能外推成「更长的自回归 rollout 里推理因子仍然较小」。
+
+---
+
+## 六、一次前向的计算顺序
+
+### 6.1 时间权重
+
+训练时，式 (4) 的范数平方乘以 $w(t)$。记
 
 $$
-\mathcal{L}_{\mathrm{vid}} = \mathbb{E}\left[ w(t_v)\, \big\| f_\theta(z_t, t_v, o, l) - (\epsilon_v - z_{1:T}) \big\|_2^2 \right].
+g(t)=\exp\big(-2(t-\tfrac{1}{2})^2\big).
+$$
+
+每个分支在 $[0,1]$ 上取 $1000$ 个等距节点 $u$。视频节点经第 3 节的映射 $t=5u/(1+4u)$，动作节点取 $t=u$。记该网格上 $g$ 的最小值为 $g_{\min}$，$g-g_{\min}$ 的均值为 $c$，则
+
+$$
+w(t)=\frac{g(t)-g_{\min}}{c}.
 \tag{8}
 $$
 
-总损失
+$g_{\min}$ 与 $c$ 由该分支的网格决定。抽样得到的 $t$ 代入式 (8)。
+
+### 6.2 训练
+
+一次更新使用一个批次的演示，顺序如下。
+
+1. 视频经预训练 VAE 编码为 latent。当前帧作为干净条件，未来帧记为 $\zeta_{1:T}$，动作块为 $\mathbf{A}$。语言经文本编码器进入交叉注意力；本体感觉若存在，则作为额外 token 接在语言之后。
+2. 两支独立抽取噪声与时间。视频时间用第 3 节的映射，动作时间在 $(0,1)$ 上均匀。按该节的路径构成加噪 latent 与加噪动作，回归目标为 $\epsilon-y$。
+3. 当前帧 latent 换回干净编码，对应 token 的时间取 $0$。未来帧与动作保持加噪。
+4. 按式 (6) 组装掩码。动作查询看见当前帧与同一噪声水平下的动作 token，看不见未来帧。视频查询看不见动作 token。
+5. 两支专家做一次联合前向。视频项只在未来帧上取范数平方，再乘该支的 $w(t)$。动作项乘动作支的 $w(t)$。对批次平均后，按式 (5) 相加。
+
+### 6.3 推理
+
+Fast-WAM 部署时不构造 $\zeta_{1:T}$。当前图像编码为干净 latent，视频时间取 $0$，视频专家前向一次并留下各层键值。动作从 $\epsilon\sim\mathcal{N}(0,I)$ 出发，时间从 $1$ 到 $0$ 等距下降。每步动作专家读取缓存的视频键值与当前动作 token，按
 
 $$
-\mathcal{L} = \lambda_{\mathrm{act}}\, \mathcal{L}_{\mathrm{act}} + \lambda_{\mathrm{vid}}\, \mathcal{L}_{\mathrm{vid}}.
-\tag{9}
+y\leftarrow y+f_\theta\,\Delta t
 $$
 
-官方默认 $\lambda_{\mathrm{act}} = \lambda_{\mathrm{vid}} = 1$（`configs/model/fastwam.yaml` 中 `lambda_action: 1.0`，`lambda_video` 缺省为 1.0）。padding 帧与步长经 `action_is_pad`、`image_is_pad` 在 batch 内作 masked mean。
+更新，其中 $\Delta t$ 是下一节点减去当前节点。第 5.3 节的比较使用 $10$ 步。当前帧不参与这轮迭代，输出为到达 $t=0$ 的动作块。
 
-**无 video co-train 变体**：令 $\lambda_{\mathrm{vid}} = 0$，架构与 Fast-WAM 推理路径不变，用于检验「无动力学监督的表征学习」之对照。
+联合变体要实例化未来视频 latent。两支从噪声出发，按各自的时间映射同步积分，动作查询看见全部视频 token。因果变体先完成视频积分，再把生成结果交给动作查询。路径与条件速度在各变体中相同。式 (8) 乘在该次损失里出现的每一项上。
 
 ---
 
-## 五、受控变体与推理图
+## 七、边界
 
-| 变体 | $\mathcal{L}_{\mathrm{vid}}$ | 推理期未来生成 | Attention 差异 |
-|------|------------------------------|----------------|----------------|
-| **Fast-WAM** | ✓ | 无 | Action 仅见首帧；video 单次 $t=0$ |
-| **Fast-WAM-Joint** | ✓ | 有 | Video–Action token 互 attend；联合去噪 |
-| **Fast-WAM-IDM** | ✓ | 有 | 先 video 去噪，再条件于生成结果预测 action；训练期对 GT video token 以 $p=0.5$ 加噪增强 |
-| **w.o. video co-train** | ✗ | 无 | 同 Fast-WAM |
-
-Optional IDM checkpoint 可在同一组权重下切换 `idm` / `first_frame` 推理模式，在不重新训练的前提下对比两种推理路径。
-
-```text
-训练（Fast-WAM）:
-  o, l ──► VAE ──► z_0 (clean) ──┐
-  future frames ──► z_{1:T} ──noisy──► Video DiT ── MoT ──► L_vid
-  a_{1:H} ──noisy──► Action DiT ────────┘              └──► L_act
-  mask: action ↛ z_{1:T}^{noisy}
-
-推理（Fast-WAM）:
-  o, l ──► z_0 ──► Video DiT (t=0, 单次) ──► KV cache ──► Action flow (N_act 步) ──► a_{1:H}
-
-推理（IDM）:
-  o, l ──► ... ──► Video flow (N_vid 步) ──► ẑ_{1:T} ──► Action flow (N_act 步) ──► a_{1:H}
-```
-
----
-
-## 六、实验结果
-
-### 6.1 仿真基准
-
-**RoboTwin 2.0**（无 embodied pretraining）：Fast-WAM 达 91.8%，接近 LingBot-VA（92.2%，有预训练），显著高于同 backbone 无预训练的 LingBot-VA（80.6%）。移除 video co-train 后降至 83.8%。
-
-**LIBERO** 四套件平均：Fast-WAM 97.6%；Joint 98.5%、IDM 98.0% 略高但差距有限；无 co-train 93.5%，Spatial 与 Long 子集降幅最为显著。
-
-受控对比的定量关系（平均成功率）：
-
-$$
-\underbrace{|\mathrm{Fast} - \mathrm{Joint}|,\; |\mathrm{Fast} - \mathrm{IDM}|}_{\text{推理机制差异}} \;\ll\; \underbrace{|\mathrm{Fast} - \mathrm{w/o\ co\text{-}train}|}_{\text{训练目标差异}}.
-$$
-
-### 6.2 真机实验（毛巾折叠）
-
-含 co-train 的 Fast-WAM 系列均显著优于无预训练 $\pi_{0.5}$；无 co-train 成功率约 10%，且平均完成时间最长。推理延迟：Fast-WAM 190 ms，Joint 580 ms，IDM 810 ms。真机任务上 IDM 成功率可略高于 Fast-WAM，精度–延迟权衡取决于部署约束。
-
-### 6.3 结果解读
-
-实验支持如下结论，而非否定世界模型的作用：
-
-> 视频预测作为训练期表征学习信号，是 WAM 性能增益的主要来源；测试期显式生成未来视频在多数基准上仅带来边际提升，却引入数倍推理延迟。
-
-Joint 与 IDM 在部分设定下仍略优，表明 future imagination 并非严格为零贡献；但在论文所考察的单 chunk、固定 horizon 设定下，其边际收益小于 video co-training。
-
----
-
-## 七、与 Diffusion Policy、$\pi_0$ 的关系
-
-| 方法 | 生成对象 | 条件 | 世界建模 |
-|------|----------|------|----------|
-| Diffusion Policy | 动作序列 | 观测历史 | 无 |
-| $\pi_0$ / $\pi_{0.5}$ | 动作 flow | 图像 + 语言 | 无显式 future video |
-| Fast-WAM | 动作 flow +（训练期）video flow | 首帧 + 语言 | $\mathcal{L}_{\mathrm{vid}}$ 约束 video backbone |
-
-Diffusion Policy 的 $\epsilon$-prediction 与 Fast-WAM 的 velocity matching 同属生成式策略参数化；WAM 额外对 $p(z_{1:T} \mid z_0, l)$ 施加监督，且经 MoT 与 action 分支共享参数。Fast-WAM 的推理计算图接近 $\pi_0$：不生成未来视觉，仅保留经 co-train 强化的 encoder 表征。
-
----
-
-## 八、待研究问题
-
-1. **Horizon 与外层自回归**：论文省略 chunk 级自回归；更长任务中，显式 future imagination 是否因误差累积而成为必要？
-2. **表征分析**：$z(o,l)$ 编码了哪些动力学因素（接触、刚体、可变形体）？需结合 probing 与反事实干预，而非仅依赖成功率。
-3. **$\lambda_{\mathrm{vid}}$ 与 mask 设计**：默认等权；更弱的 video 分支或更严格的 causal mask 是否改变「co-train 优于 imagination」的结论？
-4. **与在线微调**：当前为纯模仿学习；若在策略梯度微调中保留 $\mathcal{L}_{\mathrm{vid}}$ 作正则，能否缓解 on-policy 更新中的灾难性遗忘——Fast-WAM 原文未涉及。
+1. **部署接口。** 式 (7) 与 VLA 的动作边缘同形。WAM 相对 VLA 多出来的是式 (5) 的第二项，以及可选的推理抽样。
+2. **还不是动作条件的转移。** 默认掩码与联合变体下，视频损失都拟合 $p(\zeta_{1:T}\mid o,l)$。$p(v\mid o,\mathbf{a})$ 只在视频分支读取动作时出现；Fast-WAM、Joint 与 IDM 的已发布配置都没有打开这条路径。
+3. **单块比较。** 第 5.3 节的分离省略了 chunk 之间的自回归。horizon 变长以后，未来视觉的抽样误差会进入下一步条件，推理因子的权重可能改变。
+4. **$z$ 的内容。** 成功率下降说明视频损失改变了表示，并不说明 $z(o,l)$ 编码了接触、刚体或可变形体中的哪一种。这需要探测或干预，而不是再看一次成功率。
+5. **权重与掩码。** 式 (5) 的 $\lambda$ 与式 (6) 的可见集都是模型的一部分。换一个 $\lambda$ 或让动作看见未来，第 5.3 节的大小关系需要重新识别。
+6. **在线更新。** 当前目标是纯模仿。若在策略梯度微调中保留视频项，该项是对生成分布的继续监督，不是价值函数。原文没有处理这一设定。
 
 ---
 
@@ -304,5 +241,6 @@ Diffusion Policy 的 $\epsilon$-prediction 与 Fast-WAM 的 velocity matching �
 
 - Yuan, T., Dong, Z., Liu, Y., & Zhao, H. (2026). Fast-WAM: Do World Action Models Need Test-time Future Imagination? [arXiv:2603.16666](https://arxiv.org/abs/2603.16666).
 - Lipman, Y., Chen, R. T. Q., Ben-Hamu, H., Nickel, M., & Le, M. (2023). Flow Matching for Generative Modeling. ICLR.
-- Wan Team (2025). Wan: Open and Advanced Large-Scale Video Generative Models. [arXiv:2503.20314](https://arxiv.org/abs/2503.20314).
+- Black, K., et al. (2024). π₀: A Vision-Language-Action Flow Model for General Robot Control. [arXiv:2410.24164](https://arxiv.org/abs/2410.24164).
 - Chi, C., et al. (2023). Diffusion Policy. RSS. [arXiv:2303.04137](https://arxiv.org/abs/2303.04137).
+- Wan Team (2025). Wan: Open and Advanced Large-Scale Video Generative Models. [arXiv:2503.20314](https://arxiv.org/abs/2503.20314).

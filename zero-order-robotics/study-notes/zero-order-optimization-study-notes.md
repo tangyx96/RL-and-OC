@@ -17,7 +17,7 @@
 | **§VI** | 并行计算 | JAX/PyTorch、MJX/Isaac、Hydrax/Evosax/CleanRL |
 | **§VII** | 结论 | 约束零阶、全局解等开放问题 |
 
-**统一问题**（贯穿全文）：
+**统一问题**（式 (1)，贯穿全文）：
 
 ```math
 \min_{x \in \mathbb{R}^n} f(x).
@@ -26,7 +26,7 @@
 - **TO**：$x = (u_0,\ldots,u_{T-1})$，$n = T n_u$（single shooting，动力学约束隐式消去状态）。  
 - **RL**：$x = \theta$（策略参数）；目标 $F(\theta) = \mathbb{E}_s[J(\theta,s)]$，即标准折扣 MDP 上的期望回报。
 
-**阅读顺序建议**：§II 是理论枢纽（尤其 RS 与 LSE）；§III、§IV 分别是 TO、RL 的「同一套随机搜索」实例化；§V 解决单点搜索的多样性不足；§VI 解释机器人里零阶方法为何今天才「算得动」。
+**阅读顺序建议**：§II 是理论枢纽（尤其 RS 与 LSE）；§III、§IV 分别是 TO、RL 的「同一套随机搜索」实例化；§V 解决单点搜索的多样性不足；§VI 解释机器人里零阶方法为何直到今天才在计算上变得可行。
 
 ---
 
@@ -39,9 +39,9 @@
 | 动机 | 说明 |
 |------|------|
 | **非光滑目标** | 接触、摩擦、碰撞使 $f$ 不可微或梯度无意义；一阶方法需额外平滑/近似 |
-| **实现成本** | 对复杂仿真器手写高效 $\nabla f$（含 contact implicit）代价高 |
+| **实现成本** | 对复杂仿真器手写高效 $\nabla f$（含 contact implicit）成本高昂 |
 | **局部极小** | 确定性梯度下降/牛顿法易陷局部极小；零阶方法多为**随机**的，有逃逸可能 |
-| **并行硬件** | GPU 上每迭代 **$K$ 次并行 rollout** 使高维采样 TO/MPC 可行 [2,3] |
+| **并行硬件** | GPU 上每次迭代并行执行 $K$ 次 rollout，使高维采样下的 TO/MPC 变得可行 [2,3] |
 
 #### 历史与本文谱系
 
@@ -57,34 +57,34 @@
 | 每步信息 | $f(x)$ 值（可批量） | $\nabla f(x)$ |
 | 非光滑 | 自然适用 | 需平滑/次梯度 |
 | 维数 $n$ 大 | 靠随机方向/SPSA/RS，$O(1)$ 次评估/方向 | 通常需 $O(n)$ 或自动微分 |
-| 机器人瓶颈 | **仿真 rollout 次数**，不是矩阵求导 |
+| 机器人瓶颈 | **仿真 rollout 次数**，而非矩阵求导运算 |
 
 ### TO vs RL（问题空间与部署）
 
 | 维度 | 轨迹优化 TO | 策略优化 RL |
 |------|-------------|-------------|
 | 优化变量 | 有限维控制序列 $u_{0:T-1}$ | 策略 $\pi_\theta$ → 有限参数 $\theta$（如 NN 权重） |
-| 目标 | 式 (17) 有限时域代价和 | 式 (31)–(32) 无限时域折扣回报 |
+| 目标 | $\sum_{t=0}^{T-1} c_t(x_t,u_t)+c_T(x_T)$（式 (17)） | $F(\theta)=\mathbb{E}_s\bigl[\sum_{k=0}^{\infty}\gamma^k r(s_k,a_k)\bigr]$（式 (31)–(32)） |
 | 时域 | 有限 $T$，MPC 下滚动 | 无限 + 折扣 $\gamma$ |
 | 部署 | **在线** MPC 循环，或离线生成轨迹数据 | 多为**离线**训 $\pi_\theta$，在线只前向 $a=\pi_\theta(s)$ |
-| 共同性 | 都可写成 (1)；算法多为**局部随机搜索 + 批量 $f$ 评估** |
+| 共同性 | 都是 $\min_x f(x)$（式 (1)）；多为局部随机搜索，每步批量评估 $f$ |
 
-**在线 vs 离线（文中强调）**：TO 可在运行时每步解 (17)；RL 近期 SOTA [4,5] 多在仿真里离线搜 $\theta$，运行时计算量小。二者算法形态仍相似（采样 → 加权/选择 → 更新）。
+**在线 vs 离线（文中强调）**：TO 可在运行时每步解式 (17)；RL 近期 SOTA [4,5] 多在仿真里离线搜 $\theta$，运行时计算量小。二者算法形态仍相似（采样 → 加权/选择 → 更新）。
 
 ### 与已有工作的关系
 
-- **TO 侧**：[13] MPPI ↔ CMA-ES；[14] MPPI ≈ 近似梯度；[3] MPPI ↔ 扩散退火；本文补 **LSE 平滑**对 MPPI 权重的优化解释及与 risk-seeking 控制的关系。  
-- **RL 侧**：[16,17] 在**参数空间**做 ES/随机搜索；[18,19] 把策略梯度与 Nesterov RS 联系（多用于 TO）；本文反向：用 RS **解释并改 actor 更新**（动作空间采样 + DPG 结构）。
+- **TO 侧**：[13] 将 MPPI 与 CMA-ES 视为同一类加权样本更新；[14] 将 MPPI 解释为近似梯度步；[3] 将 MPPI 与扩散退火相联系。本文用 **LSE 平滑**解释 MPPI 的指数权重，并讨论其与 risk-seeking 控制的关系。  
+- **RL 侧**：[16,17] 在**参数空间**进行 ES/随机搜索；[18,19] 把策略梯度与 Nesterov RS 联系（多用于 TO）；本文反向：用 RS **解释并改 actor 更新**（动作空间采样 + DPG 结构）。
 
 ### 要点
 
 - §II 的 **Algorithm 3**（近似梯度下降）是 MPPI 加权平均、CMA 协方差更新、RS Actor-Critic 的母版。  
-- **「局部搜索算法」**指采样分布依赖当前 $x$（Alg.2），≠「只收敛到局部最优解」；Alg.1/2 在条件下都可有全局收敛理论 [22]，但**维数灾难**仍在。
+- 「局部搜索」指采样分布依赖当前 $x$（算法 2）。在比算法 1 更强的条件下，它仍可收敛到全局极小 [22]；维数灾难仍然存在。
 
 ### 注意点
 
 - 默认**确定性动力学**（足式/操作常见）；随机动力学扩展留作 future work。  
-- RL 先讲**确定性策略 + DPG**，再通过 Reinforce 解释随机策略 = 动作空间平滑 + 额外探索噪声。
+- RL 首先介绍**确定性策略 + DPG**，再通过 Reinforce 解释随机策略 = 动作空间平滑 + 额外探索噪声。
 
 ---
 
@@ -106,7 +106,7 @@
 |------|------|
 | 「Global」含义 | 采样分布忽略过去迭代，非指一定找到全局最优 |
 | 理论 | 温和条件下**全局收敛** [22] |
-| 实践 | **维数灾难**——所需 $f$ 评估次数随 $n$ 指数增长，几乎不用 |
+| 实践 | **维数灾难**——所需 $f$ 评估次数随 $n$ 指数增长，实际中很少使用 |
 
 #### §II.A.2 Greedy Local Search — Algorithm 2
 
@@ -114,11 +114,8 @@
 
 | 属性 | 内容 |
 |------|------|
-| 「Local」含义 | 扰动分布中心随当前 $x$ 移动 |
-| vs 局部最优解 | 不同概念：Alg.2 在更强条件下也可证**全局收敛** [22]，但条件比 Alg.1 严 |
-| 后继 | **Predictive Sampling**（一次采 $K$ 个 $d$）、**$(1+1)$-ES** 的直接前驱 |
-
-**与 Predictive Sampling 的关系**：Alg.2 每步 1 个候选；Predictive Sampling 每步 $K$ 个候选取最优——仍是「只保留最好」，但并行评估 $K$ 路。
+| 「Local」 | 采样中心随当前 $x$ 移动。在比算法 1 更强的条件下，仍可证收敛到全局极小 [22] |
+| 与 ES | 即 $(1+1)$-ES：保留一个当前点，每步一个子代，更优才替换。一次采 $K$ 个子代再留最优，即 Predictive Sampling，也就是 $(1+\lambda)$-ES（$\lambda=K$） |
 
 ---
 
@@ -130,7 +127,7 @@
 x \leftarrow x - \alpha g, \quad g \approx \nabla f(x)\ \text{且仅用}\ f\ \text{的取值构造}.
 ```
 
-$\alpha$ 为步长/学习率。后文 MPPI、CMA 可视为在特殊 $g$ 或分布参数更新下脱离线性下降形式，但 RS/LSE 推导仍从 (3) 出发。
+$\alpha$ 为步长。后文 MPPI、CMA 不再采用这种线性下降方式，改为加权平均或分布参数更新；RS 与 LSE 仍沿 $x\leftarrow x-\alpha g$ 推导。
 
 #### 1) 完整有限差分 — 式 (2)
 
@@ -138,8 +135,8 @@ $\alpha$ 为步长/学习率。后文 MPPI、CMA 可视为在特殊 $g$ 或分�
 g = \sum_{j=1}^n \frac{f(x+\mu e_j) - f(x)}{\mu} e_j.
 ```
 
-- $\mu>0$，$e_j$ 为标准基；也可改用**中心差分**。  
-- **代价**：每步 **$n+1$**（或 $2n+1$）次 $f$ 评估 → 长视界 TO（$n=T n_u$ 很大）不适用。
+- $\mu>0$，$e_j$ 为标准基。前向差分共用一次 $f(x)$，每步 $n+1$ 次评估。中心差分取 $\bigl(f(x+\mu e_j)-f(x-\mu e_j)\bigr)/(2\mu)$，每方向两侧各一次，共 $2n$ 次。  
+- 长视界 TO 中 $n=T n_u$ 很大，二者都不适用。
 
 #### 2) Random Coordinate Descent (RCD) — 式 (3)
 
@@ -169,22 +166,52 @@ g = \frac{f(x+\mu\Delta) - f(x-\mu\Delta)}{2\mu} \Delta, \quad \Delta_i \in \{+1
 f_\mu(x) = \mathbb{E}_{\epsilon \sim \mathcal{N}(0,\Sigma)}[f(x + \mu\epsilon)].
 ```
 
-- $\mu\to 0$ 时 $f_\mu\to f$；小 $\mu$ 时极小点略移，但 $f$ 变**光滑** [12]——这是接触/非光滑 $f$ 上仍能「谈梯度」的关键。  
-换元 $z=x+\mu\epsilon$ 可把 $f_\mu$ 写成对 $z$ 的 Gaussian 加权积分（式 6），从而对 $x$ 求导**不碰** $\nabla f$：
+- $\mu\to 0$ 时 $f_\mu\to f$。$\mu$ 较小时，代理只略微改变目标，极小点因此只略有移动，但函数可以被光滑化 [12]。它的梯度可以由 $f$ 的函数值平均得到。
+
+i) 记 $\kappa=\sqrt{(2\pi)^n\det\Sigma}$，$\epsilon\sim\mathcal{N}(0,\Sigma)$。换元 $z=x+\mu\epsilon$ 得式 (6)：
 
 ```math
-\nabla f_\mu(x) = \mathbb{E}\left[\frac{f(x+\mu\epsilon)}{\mu}\Sigma^{-1}\epsilon\right] = \mathbb{E}\left[\frac{f(x+\mu\epsilon)-f(x)}{\mu}\Sigma^{-1}\epsilon\right].
+f_\mu(x)=\frac{1}{\kappa\mu^n}\int f(z)\exp\Bigl(-\frac{1}{2\mu^2}(z-x)^\top\Sigma^{-1}(z-x)\Bigr)\,dz.
+```
+
+对 $x$ 求导只作用在指数上，得到因子 $\Sigma^{-1}(z-x)/\mu^2$。与分母中的 $\mu^n$ 合在一起，即式 (7)：
+
+```math
+\nabla f_\mu(x)=\frac{1}{\kappa\mu^{n+2}}\int f(z)\exp\Bigl(-\frac{1}{2\mu^2}(z-x)^\top\Sigma^{-1}(z-x)\Bigr)\Sigma^{-1}(z-x)\,dz.
+```
+
+再令 $\epsilon=(z-x)/\mu$，回到式 (8)：
+
+```math
+\nabla f_\mu(x)=\mathbb{E}\left[\frac{1}{\mu}f(x+\mu\epsilon)\,\Sigma^{-1}\epsilon\right].
+```
+
+ii) 记 $p_m$ 为 $\mathcal{N}(m,\mu^2\Sigma)$ 的密度。对均值求导，
+
+```math
+\nabla_m\log p_m(z)=(\mu^2\Sigma)^{-1}(z-m).
+```
+
+取 $m=x$，$\epsilon=(z-x)/\mu$，得 $\nabla_m\log p_{m=x}(z)=\Sigma^{-1}\epsilon/\mu$。于是式 (8) 写成
+
+```math
+\nabla f_\mu(x)=\mathbb{E}\bigl[f(z)\,\nabla_m\log p_{m=x}(z)\bigr].
+```
+
+这是式 (9)，即 log-likelihood trick。将得分代回即得式 (8)，两种写法相等。论文将该高斯的协方差写成 $\Sigma$，对应于 $\mu=1$。这一形式与 Reinforce 同型，后文的 CMA 也由此出发。
+
+iii) $\mathbb{E}[\Sigma^{-1}\epsilon]=0$，减去 $f(x)$ 不改变期望。未减的估计仍然无偏，但幅度可以任意大；减去之后对 $f$ 的平移不变，方差更小（式 10）：
+
+```math
+\nabla f_\mu(x)=\mathbb{E}\left[\frac{f(x+\mu\epsilon)-f(x)}{\mu}\Sigma^{-1}\epsilon\right].
 ```
 
 | 要点 | 说明 |
 |------|------|
-| Baseline $f(x)$ | 利用 $\mathbb{E}[f(x)\Sigma^{-1}\epsilon]=0$，估计对 $f$ **平移不变**，降方差 |
-| Log-likelihood trick（式 9） | $\nabla f_\mu = \mathbb{E}[f(z)\nabla_m \log p_{m=x}(z)]$，与 Reinforce 同型 |
+| Baseline $f(x)$ | 减去 $f(x)$ 后估计平移不变，方差更小 |
 | 实用 $g$（式 11–12） | 前向：$(f(x+\mu\epsilon)-f(x))\Sigma^{-1}\epsilon/\mu$；中心差分用 $(f(x+\mu\epsilon)-f(x-\mu\epsilon))$ |
 | Remark 1 | 也可从**单位球面**采方向 [25]，保证 $\|\epsilon\|$ 有界 |
 | 凸情形 [12] | RS 前向/中心估计的迭代复杂度 ≤ 标准梯度法的 $n$ 倍 |
-
-**式 (11) vs 未中心化估计**：$\frac{1}{\mu}f(x+\mu\epsilon)\Sigma^{-1}\epsilon$ 合法但方差可任意大；减 $f(x)$ 后更稳。
 
 #### §II.B 小结
 
@@ -204,7 +231,7 @@ f_\mu(x) = \mathbb{E}_{\epsilon \sim \mathcal{N}(0,\Sigma)}[f(x + \mu\epsilon)].
 #### 动机与 Langevin 框架
 
 - RS/SPSA 在**凸**情形样本效率高；**非凸**时纯梯度下降陷局部极小。  
-- **Langevin SDE**（式 13）：$dX_t = \nabla_x \log p(X_t)\,dt + dW_t$，平稳分布为 $p$ [26]。  
+- **Langevin SDE**（式 13）：$dX_t = \nabla_x \log p(X_t)\,dt + dW_t$，平稳分布为 $p$ [26]。标准过阻尼朗之万的扩散系数是 $\sqrt{2}$；式 (13) 把它吸收进 $W_t$ 的标度，离散式 (16) 再用 $\alpha_k$、$\gamma_k$ 分开调节漂移和噪声。  
 取 Boltzmann 型（式 14–15）：
 
 ```math
@@ -225,7 +252,7 @@ x_{k+1} = x_k - \alpha_k g_k + \gamma_k \epsilon_k, \quad g_k = \nabla f(x_k) + 
 
 #### 实践与 Remark 2
 
-- 理论强但**仅渐近**；有限步温度调度难设计。  
+- 理论强但**仅为渐近结果**；有限步温度调度难设计。  
 - **Remark 2**：Alg.2 的「仅接受下降」可与 **Metropolis–Hastings** 建立联系 [30]（附录 A）——拒绝 worsening 样本 ≈ MH 接受率。  
 - **与 §IV Remark 8**：RL 目标 $F(\theta)=\mathbb{E}_s[J(\theta,s)]$ 本身需 MC → 梯度估计自带噪声 → 可解释 RL 少陷坏局部极小。
 
@@ -242,12 +269,12 @@ x_{k+1} = x_k - \alpha_k g_k + \gamma_k \epsilon_k, \quad g_k = \nabla f(x_k) + 
 | 要素 | 说明 |
 |------|------|
 | **Single shooting** | 只优化 $u$；状态由动力学递推，约束隐式消去 |
-| 记号 | 文中 $x$ 兼指状态；优化变量实为 $u_{0:T-1}$，再打包成 (1) 的 $x$ |
-| 控制约束 | 常**罚函数**进 $c_t$（实验里 Hydrax 如此） |
+| 记号 | 式 (17) 里的 $x$ 是状态。优化的是控制序列 $u_{0:T-1}$，拼成一条向量后就是式 (1) 的 $x$ |
+| 控制约束 | 控制上下界写进 $c_t$ 的罚项。Hydrax 实验也这样处理 |
 | 维数 | $n = T n_u$ |
 | 黑盒 | $f(x)$ = 沿控制序列 rollout 的总代价，不要求 $\nabla_u$ |
 
-**MPC 用法**：每控制周期解 (17)，只执行 $u_0$，再滚动——零阶 MPC 即每步用 MPPI/CMA 等更新整条 $u$ 序列 [2,3]。
+**MPC 用法**：每控制周期解式 (17)，只执行 $u_0$，再滚动——零阶 MPC 即每步用 MPPI/CMA 等更新整条 $u$ 序列 [2,3]。
 
 ---
 
@@ -258,8 +285,8 @@ x_{k+1} = x_k - \alpha_k g_k + \gamma_k \epsilon_k, \quad g_k = \nabla f(x_k) + 
 | 要点 | 说明 |
 |------|------|
 | 并行 | $K$ 次 rollout **完全独立**，适合 GPU 批量仿真 [9] |
-| vs MPPI | 离散 **min**（赢家通吃），非加权平均 |
-| ES 特例 | **$(1+\lambda)$-ES**（§V）与此等价 |
+| 与 MPPI | 只留下代价最小的一条；MPPI 则对所有样本做指数加权平均 |
+| 与 ES | 一个当前点，一次采 $K$ 个扰动并只留最优，即 §II 的 $(1+\lambda)$-ES |
 | 局限 | 简单但在 Hydrax 实验中仍具竞争力（Fig.2） |
 
 ---
@@ -283,6 +310,8 @@ x \leftarrow \sum_{k=1}^K w_k x_k.
 
 #### LSE 平滑目标（式 20–21）
 
+引入 log-sum-exp，是为了把 MPPI 的更新看成高斯平滑的一种变体。代理由式 (5) 换成
+
 ```math
 f_{\mu,\lambda}(x) = -\lambda \log \mathbb{E}\left[\exp\left(-\frac{1}{\lambda} f(x+\mu\epsilon)\right)\right].
 ```
@@ -290,13 +319,23 @@ f_{\mu,\lambda}(x) = -\lambda \log \mathbb{E}\left[\exp\left(-\frac{1}{\lambda} 
 - $\mu\to 0$：恢复原 $f$；$\lambda\to\infty$：$f_{\mu,\lambda}\to f_\mu$（RS）[15]。  
 - LSE 可看作 RS 与 **Moreau envelope** 之间的插值：Moreau 近似更好但更贵；LSE 用样本换近似质量。
 
-**梯度与 MPPI 一致**（式 21–23）：$\nabla f_{\mu,\lambda}$ 的 Monte Carlo 估计含**分母上的期望** → 需要较多样本；并行算力充足时这不是问题，但大 $K$ 使更新近乎确定性 → **易陷局部极小**（与 §II.C 退火形成张力）。
+对 $x$ 求导同样只作用在高斯密度上。记 $w(\epsilon)=\exp(-f(x+\mu\epsilon)/\lambda)$，
 
-#### Natural gradient 视角（式 24）
+```math
+\nabla f_{\mu,\lambda}(x)=-\frac{\lambda}{\mu}\frac{\mathbb{E}\bigl[w(\epsilon)\,\Sigma^{-1}\epsilon\bigr]}{\mathbb{E}[w(\epsilon)]}.
+```
 
-- 设 $\mu=1,\ \alpha=1/\lambda$，MPPI 更新 = 在 Gaussian 族上的 **natural gradient** 步 [31]。  
-- Fisher 信息 $F = \Sigma^{-1}$（Gaussian 情形）；natural gradient 使更新对参数化不变（附录 A）。  
-- $\Sigma=\sigma^2 I$ 时 $\sigma/\lambda \le 1/L$（$L$ 为平滑函数 Lipschitz 常数）→ 步长像凸优化里的保守最优步长 [15,32]。
+分母是另一个期望，用样本估计这个比值需要较大的 $K$ 才稳定。并行仿真使这一点不成问题。但 $K$ 很大时，每次算出来的加权平均几乎一样，更新接近一次确定性的梯度步，容易停在局部极小。§II.C 的方向相反：那里依靠 SPSA 的估计噪声，或显式的朗之万噪声，才离开局部极小。
+
+#### Natural gradient 视角（式 23–24）
+
+取 $\mu=1$。均值参数的 Fisher 信息为 $F=\Sigma^{-1}$ [31]，自然梯度对参数化不变（附录 B）。步长 $\alpha=1/\lambda$ 时，$x\leftarrow x-\alpha F^{-1}\nabla f_{\mu,\lambda}$ 消去 $\Sigma^{-1}$ 与 $\lambda$：
+
+```math
+x\leftarrow x+\frac{\sum_k w_k\epsilon_k}{\sum_j w_j}=\sum_k w_k(x+\epsilon_k),
+```
+
+即式 (18)。位移 $\sum w_k\epsilon_k/\sum w_j$ 等于 $-\Sigma\nabla f_{\mu,\lambda}/\lambda$，不是 $\nabla f_{\mu,\lambda}$ 本身。$\Sigma=\sigma^2 I$ 时，$\sigma^2/\lambda\le 1/L$（$L$ 为平滑函数的 Lipschitz 常数）对应凸优化里偏保守的步长 [15,32]。
 
 #### Fig.1 直觉（RS vs LSE）
 
@@ -306,8 +345,20 @@ f_{\mu,\lambda}(x) = -\lambda \log \mathbb{E}\left[\exp\left(-\frac{1}{\lambda} 
 
 #### Remark 3–4
 
-- **Remark 3**：LSE 与 **risk-seeking** 控制 [33] 相关（附录 A）。  
-- **Remark 4**：$\lambda\to 0$ 时 surrogate 集中在全局极小附近，与模拟退火 $p\propto e^{-f/\lambda}$ 同族；对 LSE 做 Langevin 更新 ≈ 对 $e^{-f/\lambda}$ 做 RS。
+- **Remark 3**：LSE 与 **risk-seeking** 控制 [33] 相关（附录 C）。  
+- **Remark 4**：$\lambda\to 0$ 时，$f_{\mu,\lambda}$ 集中在全局极小附近，与模拟退火的 $p\propto\exp(-f/\lambda)$ 同族。上面的 MPPI 是下降 $f_{\mu,\lambda}$。另一条路先平滑 $h(x)=\exp(-f(x)/\lambda)$：
+
+```math
+h_\mu(x)=\mathbb{E}\bigl[\exp(-f(x+\mu\epsilon)/\lambda)\bigr].
+```
+
+因为 $\exp(-f_{\mu,\lambda}/\lambda)=h_\mu$，以 $f_{\mu,\lambda}$ 为势能的朗之万，平稳分布就是这个平滑后的玻尔兹曼，漂移为 $\nabla\log h_\mu$。取 $\mu=1$，只走
+
+```math
+x\leftarrow x+\Sigma\nabla\log h_\mu(x)=x+\frac{\mathbb{E}[w\epsilon]}{\mathbb{E}[w]},
+```
+
+不加式 (16) 的显式噪声 $\sqrt{2}\,\Sigma^{1/2}\epsilon_k$，就与式 (18) 相同。
 
 #### 与经典 MPC 的区别
 
@@ -335,32 +386,49 @@ MPPI/RS 常取固定 $\Sigma$；实际中搜索尺度与病态程度随迭代变
 - 优化 RS 的均值 $x$ = 在 Gaussian **信念** $N(x,\Sigma)$ 下最小化期望代价；$\Sigma$ 描述「不确定性椭圆」。  
 - $J$ 最小时 $N(x,\Sigma)$ 集中在 $f$ 的极小附近 [34]。
 
-**Log-likelihood trick**（式 28–29），natural gradient 得：
+**Log-likelihood**（式 28）给出 $\nabla J(\theta)=\mathbb{E}[f(z)\nabla_\theta\log p_\theta(z)]$。均值与协方差的自然梯度为（式 29）[35]：
 
 ```math
 \Delta x = \mathbb{E}[f(z)(z-x)], \quad \Delta \Sigma = \mathbb{E}[f(z)((z-x)(z-x)^\top - \Sigma)].
 ```
 
-**离散样本更新**（式 30），步长 $\alpha$，$w_k=f(x_k)$ 或 $w_k=f(x_k)-f(x)$：
+$\Delta$ 是 $J$ 的上升方向。最小化时走 $-\Delta$。样本权取 $w_k=f(x_k)$ 或 $w_k=f(x_k)-f(x)$，步长 $\alpha$ 吸收 $1/K$：
 
 ```math
-\Sigma \leftarrow (1-\alpha\textstyle\sum_k w_k)\Sigma + \alpha\textstyle\sum_k w_k (x_k-x)(x_k-x)^\top,
+\Sigma \leftarrow \Sigma-\alpha\sum_k w_k\bigl((x_k-x)(x_k-x)^\top-\Sigma\bigr),
 ```
 
 ```math
-x \leftarrow (1-\alpha\textstyle\sum_k w_k)x + \alpha\textstyle\sum_k w_k x_k.
+x \leftarrow x-\alpha\sum_k w_k(x_k-x).
 ```
 
-**更新顺序**：**先 $\Sigma$ 后 $x$**——协方差更新必须用采样时的旧均值 $x$。
+先更新 $\Sigma$，中心是采样时的均值。论文式 (30) 沿 $+\Delta$ 写成
+
+```math
+\begin{aligned}
+\Sigma &\leftarrow \Bigl(1-\alpha\sum_k w_k\Bigr)\Sigma+\alpha\sum_k w_k(x_k-x)(x_k-x)^\top,\\
+x &\leftarrow \Bigl(1-\alpha\sum_k w_k\Bigr)x+\alpha\sum_k w_k x_k.
+\end{aligned}
+```
+
+最小化 $J$ 时取相反号，即上面的 $-\Delta$。
+
+权重非负且 $\sum_k w_k=1$ 时，向高权样本移动就是下降方向，
+
+```math
+x\leftarrow(1-\alpha)x+\alpha\sum_k w_k x_k,
+```
+
+$\alpha=1$ 即为加权均值。指数权来自对 LSE 目标的自然梯度，不是把 $\exp(-f/\lambda)$ 代进 $\mathbb{E}[f]$ 的得分后再沿 $+\Delta$ 走。
 
 #### Table I：权重变体 → 不同名算法
 
 | 算法 | 权重 $w_k$ | 备注 |
 |------|-----------|------|
-| **CMA** | $f(x_k)$ 或 $f(x_k)-f(x)$ | 平移不变 |
-| **CMA-ES** | 按 $f(x_k)$ **排序**的任意单调权 [8,34] | 无 evolution path 版 |
+| **CMA** | $f(x_k)$ 或 $f(x_k)-f(x)$ | 沿 $-\Delta$ 下降；减 $f(x)$ 后平移不变 |
+| **CMA-ES** | 按代价排序，更优样本权更大 [8,34] | 无 evolution path；向高权样本移动 |
 | **MPPI-CMA** | 指数权 (19) | 权非负且和为 1 |
-| **CEM** | 精英权：最好 $K_e$ 个为 $1/K_e$，其余 0 | 更新顺序：均值先于协方差（附录 A） |
+| **CEM** | 精英权：最好 $K_e$ 个为 $1/K_e$，其余 0 | 先更新均值，协方差绕新均值（附录 D） |
 
 #### 正定性与 xNES / MPPI-CMA
 
@@ -372,8 +440,8 @@ x \leftarrow (1-\alpha\textstyle\sum_k w_k)x + \alpha\textstyle\sum_k w_k x_k.
 #### 块对角 $\Sigma$ 与长视界 $T$
 
 - 全矩阵 CMA：$O(n^2)$ 存储/更新，$n=Tn_u$ 时不可行。  
-- 设 $\Sigma=\mathrm{blockdiag}(\Sigma_1,\ldots,\Sigma_T)$，每块 $n_u\times n_u$：对**每块**做 natural gradient → 保持块对角，**$O(T)$** 复杂度；Predictive Sampling / MPPI 同理。  
-- 直接对全 $\Sigma$ 做 (29) **不一定**保持块对角——应对每块 $\Sigma_t$ 单独更新（文中称 block-diagonal CMA，形式证明留 future work）。  
+- 设 $\Sigma=\mathrm{blockdiag}(\Sigma_1,\ldots,\Sigma_T)$，每块 $n_u\times n_u$：对**每块**应用 natural gradient → 保持块对角，**$O(T)$** 复杂度；Predictive Sampling / MPPI 同理。  
+- 直接对全 $\Sigma$ 应用 (29) **不一定**保持块对角——应对每块 $\Sigma_t$ 单独更新（文中称 block-diagonal CMA，形式证明留 future work）。  
 - **Remark 6**：块对角 MPPI-CMA = **PI²-CMA** [13]（无时间平均）。
 
 ---
@@ -426,7 +494,11 @@ F(\theta) = \mathbb{E}_s[J(\theta,s)], \quad J(\theta,s) = \sum_{k=0}^\infty \ga
 
 ### §IV.A Deterministic Policy Gradient
 
-**Q 定义**（式 34）：从 $(s,a)$ 出发，$a_0=a$，之后 $a_k=\pi_\theta(s_k)$ 的折扣回报和。
+**Q 定义**（式 34）：$s_0=s$，$a_0=a$，其后 $a_k=\pi_\theta(s_k)$，$s_{k+1}=f_{\mathrm{dyn}}(s_k,a_k)$，
+
+```math
+Q(s,a)=\sum_{k=0}^{\infty}\gamma^k r(s_k,a_k).
+```
 
 **DPG 定理**（式 33, 35）：
 
@@ -486,7 +558,7 @@ F(\theta) = \mathbb{E}_s[J(\theta,s)], \quad J(\theta,s) = \sum_{k=0}^\infty \ga
 | RS 采样 | 每更新 **10** 个 $\epsilon$；$\Sigma=0.1^2 I$ |
 | 重复 | 每任务 5 runs |
 
-**Fig.3**：RS-DDPG、LSE-DDPG **显著优于** DDPG；TD3 已强，改进边际小（未全面调 actor-critic 超参）。
+**Fig.3**：RS-DDPG、LSE-DDPG **显著优于** DDPG；TD3 已强，改进边际小（未全面调优 actor-critic 超参数）。
 
 ---
 
@@ -560,7 +632,7 @@ F(\theta) = \mathbb{E}_s[J(\theta,s)], \quad J(\theta,s) = \sum_{k=0}^\infty \ga
 
 ### 与 ES-RL
 
-Salimans ES [16] 等在**参数空间**做 $(N+\lambda)$/CMA；本文强调 **动作空间 RS + DPG** 与 TO 侧 CMA 的公式统一，目标不是替代 PPO 式种群 RL。
+Salimans ES [16] 等在**参数空间**进行 $(N+\lambda)$/CMA；本文强调 **动作空间 RS + DPG** 与 TO 侧 CMA 的公式统一，目标不是替代 PPO 式种群 RL。
 
 ---
 
@@ -615,7 +687,7 @@ JAX/PyTorch [46,47] 擅张量并行，但 TO/RL 的 $f(x)$ 每次评估 = **整�
 | 9 | $(N+\lambda)$-ES | §V | 种群 + 精英选择 |
 | 10 | CEM | 附录 | 精英权 CMA 变体 |
 
-**附录 A**（正文引用，未单独笔记）：Metropolis–Hastings 与 Alg.2；**natural gradient** / Fisher 信息；**risk-seeking** 与 LSE；CEM 更新顺序（均值先于协方差）。
+论文附录未单独笔记：A 为 Metropolis–Hastings 与 Alg.2；B 为 natural gradient 与 Fisher 信息；C 为 risk-seeking 与 LSE；D 为 CEM（先更新均值，协方差绕新均值）。
 
 ---
 

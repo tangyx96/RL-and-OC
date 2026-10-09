@@ -24,11 +24,17 @@
 
 ### 1.2 随机预测采样
 
-1. 采样：$\mathbf{u}^{(i)}\sim q(\mathbf{u})$，$i=1,\dots,N$
-2. 评估：$J^{(i)}=J(\mathbf{u}^{(i)})$
-3. 选择：$\mathbf{u}^*=\arg\min_i J^{(i)}$
+提议取当前序列附近的高斯 $q=\mathcal{N}(\mathbf{u},\Sigma)$。采样 $\mathbf{u}^{(i)}\sim q$，$i=1,\dots,N$，候选集包含当前序列：
 
-$q$ 通常取当前均值附近的高斯。维数升高后，要靠均匀铺点覆盖空间，样本需求大致随维数指数增长，因此后面都改为局部采样并迭代更新分布。
+```math
+\mathbf{u}^{+}
+\in
+\arg\min\bigl\{J(\mathbf{u}),\,J(\mathbf{u}^{(1)}),\dots,J(\mathbf{u}^{(N)})\bigr\}.
+```
+
+没有更优样本时保持 $\mathbf{u}$。这是局部搜索，只保留一条最优序列。
+
+与历史无关的全局采样要用样本覆盖决策空间，评估次数随维数指数增长。预测采样把提议限制在当前序列附近，并丢弃最优样本以外的信息。MPPI 与 CEM 使用全部样本的权重，并更新提议分布。
 
 ### 1.3 高斯平滑
 
@@ -46,38 +52,74 @@ J_\sigma(\bar{\mathbf{u}})
 = \mathbb{E}_{\epsilon\sim\mathcal{N}(0,\Sigma)}\bigl[J(\bar{\mathbf{u}}+\epsilon)\,\Sigma^{-1}\epsilon\bigr].
 ```
 
-$J$ 只需在高斯测度下可积，便可交换积分与求导，不必存在 $\nabla J$。$\mathbb{E}[\Sigma^{-1}\epsilon]=0$，减去 $J(\bar{\mathbf{u}})$ 不改变期望，只降低方差。平滑后 $J_\sigma$ 任意阶可微；窄阱会被抹平一些，极小点也可能略有移动。
+该式不依赖 $\nabla J$。交换积分与求导还要求 $|J(\mathbf{z})|\,\|\mathbf{z}\|^k$ 在平移后的高斯下可积，且 $k\ge 1$，以吸收得分中的线性增长；仅对某一个高斯可积并不够。满足该条件时 $J_\sigma$ 无穷次可微。$\mathbb{E}[\Sigma^{-1}\epsilon]=0$，减去 $J(\bar{\mathbf{u}})$ 不改变期望，估计对 $J$ 的加法常数不变。$\Sigma$ 较大时，窄而深的阱会被邻域中的高代价填平，平滑后的极小可以明显偏离原极小。
 
 ## 2. 交叉熵方法与重要性采样
 
 ### 2.1 CEM 流程
 
-在高斯族 $\mathcal{N}(\boldsymbol{\mu},\Sigma)$ 上迭代：
+在高斯族上迭代。$k=0,1,2,\dots$ 为轮次，$i=1,\dots,N$ 为该轮样本。
 
-1. 初始化 $\mathcal{N}(\boldsymbol{\mu}_0,\Sigma_0)$
-2. 对 $k=0,1,2,\dots$：采样 $\mathbf{u}^{(i)}\sim\mathcal{N}(\boldsymbol{\mu}_k,\Sigma_k)$，计算 $J^{(i)}$
-3. 保留代价最低的约 $\rho\%$ 样本（精英集）
-4. 用精英集的样本均值更新 $\boldsymbol{\mu}$，再以这个新均值为中心计算协方差
+1. 初始化 $\mathcal{N}(\boldsymbol{\mu}_0,\Sigma_0)$。
+2. 采样 $\mathbf{u}^{(i)}\sim\mathcal{N}(\boldsymbol{\mu}_k,\Sigma_k)$，计算 $J^{(i)}=J(\mathbf{u}^{(i)})$。
+3. 保留 $J^{(i)}$ 最低的约 $\rho\%$ 样本，记为精英集 $\mathcal{E}_k$。
+4. $\boldsymbol{\mu}_{k+1}$ 取 $\mathcal{E}_k$ 的样本均值；$\Sigma_{k+1}$ 以 $\boldsymbol{\mu}_{k+1}$ 为中心。
 
-这是交叉熵法的极大似然更新：高斯族拟合精英的经验分布，协方差围绕更新后的均值。自然梯度形式的 CMA 不同，协方差必须围绕采样时的均值，见 §2.2 末。
+这是交叉熵法的极大似然更新：高斯族拟合精英的经验分布。自然梯度形式的 CMA 不同，协方差绕 $\boldsymbol{\mu}_k$，见 §2.2 末。
 
 ### 2.2 玻尔兹曼分布与指数权重
 
-把低代价控制写成玻尔兹曼分布
+低代价控制的目标分布取归一化的玻尔兹曼密度
 
 ```math
-p^*(\mathbf{u})\propto\exp\bigl(-J(\mathbf{u})/\lambda\bigr).
+p^*(\mathbf{u})=\frac{1}{Z}\exp\bigl(-J(\mathbf{u})/\lambda\bigr),\qquad
+Z=\int\exp\bigl(-J(\mathbf{u})/\lambda\bigr)\,d\mathbf{u}.
 ```
 
-它的均值和协方差是对 $p^*$ 的矩。从当前提议 $q=\mathcal{N}(\boldsymbol{\mu}_k,\Sigma_k)$ 抽样时，$p^*$ 的重要性权重正比于 $\exp(-J/\lambda)/q(\mathbf{u})$，不是 $\exp(-J/\lambda)$ 本身。
-
-信息论目标 $\min_q\mathbb{E}_q[J]+\lambda D_{\mathrm{KL}}(q\|p_0)$ 的解是另一个分布。先验取当前高斯时，
+均值与协方差是该密度下的矩：
 
 ```math
-p_q(\mathbf{u})\propto\exp\bigl(-J(\mathbf{u})/\lambda\bigr)\,q(\mathbf{u}).
+\boldsymbol{\mu}^*=\int\mathbf{u}\,p^*(\mathbf{u})\,d\mathbf{u},\qquad
+\Sigma^*=\int(\mathbf{u}-\boldsymbol{\mu}^*)(\mathbf{u}-\boldsymbol{\mu}^*)^\top p^*(\mathbf{u})\,d\mathbf{u}.
 ```
 
-从 $q$ 估计 $p_q$ 的矩，$q$ 与重要性比中的 $q$ 相消，权重才是指数代价：
+\(J\) 由 rollout 计算，\(Z\) 与这两个积分都没有闭式。高斯可由 \((\boldsymbol{\mu}_k,\Sigma_k)\) 直接抽样；\(p^*\) 只给出未归一化的形状，不能交给标准随机数发生器。样本因此仍取自当前提议 \(q=\mathcal{N}(\boldsymbol{\mu}_k,\Sigma_k)\)。
+
+要估计的是 \(p^*\) 下的期望，样本来自 \(q\)。对可积的 \(f\)，
+
+```math
+\mathbb{E}_{p^*}[f]
+=\int f(\mathbf{u})\frac{p^*(\mathbf{u})}{q(\mathbf{u})}\,q(\mathbf{u})\,d\mathbf{u}
+=\mathbb{E}_q\Bigl[f(\mathbf{u})\frac{p^*(\mathbf{u})}{q(\mathbf{u})}\Bigr].
+```
+
+权重是 \(p^*/q\)。\(Z\) 在样本间归一化时约去，故
+
+```math
+\frac{p^*(\mathbf{u})}{q(\mathbf{u})}
+\propto
+\frac{\exp(-J(\mathbf{u})/\lambda)}{q(\mathbf{u})}.
+```
+
+另一问题是在先验 \(p_0\) 附近最小化期望代价。把待求分布记为 \(\pi\)，与采样提议 \(q\) 区分开：
+
+```math
+\min_{\pi}\ \mathbb{E}_{\pi}[J]+\lambda\,D_{\mathrm{KL}}(\pi\|p_0).
+```
+
+第一项把质量移向 \(J\) 小的区域，第二项限制 \(\pi\) 偏离 \(p_0\)；\(\lambda\) 越小，解越集中于低代价处。在 \(\int\pi=1\) 下对 \(\pi\) 变分，驻点满足
+
+```math
+J(\mathbf{u})+\lambda\log\pi(\mathbf{u})-\lambda\log p_0(\mathbf{u})=\text{常数},
+```
+
+因而
+
+```math
+\pi(\mathbf{u})\propto p_0(\mathbf{u})\exp\bigl(-J(\mathbf{u})/\lambda\bigr).
+```
+
+取 \(p_0=q\)，把这个解记为 \(p_q\)。它比 \(p^*\) 多乘了提议 \(q\)。仍用 \(q\) 估计 \(p_q\) 的矩时，重要性比为 \(p_q/q\propto\exp(-J/\lambda)\)，\(q\) 相消：
 
 ```math
 w_i=\exp\bigl(-J(\mathbf{u}^{(i)})/\lambda\bigr),
@@ -85,9 +127,9 @@ w_i=\exp\bigl(-J(\mathbf{u}^{(i)})/\lambda\bigr),
 \boldsymbol{\mu}_{k+1}=\frac{\sum_{i=1}^N w_i\mathbf{u}^{(i)}}{\sum_{i=1}^N w_i}.
 ```
 
-按 $p_q$ 的矩估计协方差时，中心是这个新均值。$\lambda$ 较小、权重很尖时，接近只留最精英的一小撮；$\rho\%$ 截断则是固定比例的均匀权。温度和分位数是两种把搜索分布收紧的方式。
+用这些权重估计 \(p_q\) 的样本协方差时，中心是 \(\boldsymbol{\mu}_{k+1}\)。CEM 的精英均匀权同样绕更新后的均值。\(\lambda\) 小时指数权集中于少数低代价样本；\(\rho\%\) 截断则在固定比例上取均匀权。二者都收紧搜索分布，权重不同，更新不同。
 
-只更新均值、固定 $\Sigma$，就是下一节的 MPPI。均值与 $\Sigma$ 一起更新时，指数权给出 MPPI-CMA，排序权给出 CMA-ES。长视界下 $\Sigma$ 取块对角，每时刻一块 $n_u\times n_u$。自然梯度 CMA 的协方差一步必须围绕采样时的均值；CEM 与这里的矩匹配相同，围绕更新后的均值。
+固定 \(\Sigma\)、只更新均值，即第 3 节的 MPPI。自然梯度同时更新 \(\Sigma\) 时，指数权对应 MPPI-CMA，排序权对应不含 evolution path 的 CMA-ES。该协方差绕采样均值 \(\boldsymbol{\mu}_k\)，绕的不是 \(\boldsymbol{\mu}_{k+1}\)。长视界下 \(\Sigma\) 取块对角，每时刻一块 \(n_u\times n_u\)。
 
 ## 3. MPPI 的两种推导路径
 
@@ -280,14 +322,14 @@ $i=N$ 时时间项为零，噪声最大；$i$ 降到 $1$ 时时间项约为 $-1/
 
 | 类别 | 代表算法 | 核心思想 | 适用场景 |
 |------|----------|----------|----------|
-| 随机搜索 | 预测采样 | 采样后取最小 | 低维、易并行 |
+| 随机搜索 | 预测采样 | 候选含当前序列，只留最优 | 批量 rollout |
 | 交叉熵 | CEM | 精英集拟合高斯 | 中等维数 |
 | 路径积分 | MPPI | 指数权重更新均值 | 实时控制 |
 | 进化策略 | CMA-ES | 同时适应协方差 | 病态、尺度变化 |
 | 变分推断 | SVGD | 带排斥的粒子流 | 多峰 |
 | 扩散退火 | DIAL-MPC | 按日程缩小采样噪声 | 复杂地形、需先探索后利用 |
 
-经验上：维数很低可用 CEM、CMA；要滚动实时多用 MPPI 或对其 $\Sigma$ 退火；多峰明显时加 SVGD 或多种群。理论分析则回到朗之万与玻尔兹曼。
+实时控制多用 MPPI，或按第 6 节对 $\Sigma$ 退火。尺度与病态程度随迭代变化时用 CMA-ES。多峰时用 SVGD 或多种群。理论分析回到朗之万与玻尔兹曼。
 
 ## 8. 理论统一框架
 
@@ -304,23 +346,25 @@ $i=N$ 时时间项为零，噪声最大；$i$ 降到 $1$ 时时间项约为 $-1/
 ### 8.2 一条链条
 
 1. 高斯平滑给出不依赖 $\nabla J$ 的梯度。
-2. 指数权重把 CEM 的精英更新连到 MPPI 的均值更新。
-3. 平滑得分在 $\Sigma$ 预条件下与 MPPI 同一步；配上 $\sqrt{2}\,\Sigma^{1/2}$ 噪声并退火，就进入朗之万和扩散。
-4. CMA 在同一高斯上再更新 $\Sigma$。
+2. 精英均匀权给出 CEM 的均值；指数权在 $\Sigma$ 固定时给出 MPPI。
+3. 平滑得分在 $\Sigma$ 预条件下与 MPPI 同一步；配上 $\sqrt{2}\,\Sigma^{1/2}$ 噪声并退火，即进入朗之万与扩散。
+4. CMA 在同一高斯上更新 $\Sigma$，中心为采样均值。
 
 ### 8.3 可延伸的方向
 
-把双重退火与 SVGD 的排斥合在一起；用学习模型提供更好的提议分布 $q$；以及非凸问题中有限步收敛的保证。
+将第 6 节的轨迹层与动作层噪声日程和 SVGD 的排斥项结合；用学习得到的模型作为提议 $q$；以及非凸问题的有限步收敛保证。
 
 ## 结论
 
 MPPI 是 $p_q$ 的指数加权均值。它等于 log-sum-exp 目标的自然梯度步 $-\Sigma\nabla J_{\Sigma,\lambda}/\lambda$，也等于预条件朗之万的确定性漂移 $\mathbf{v}+\Sigma\nabla\log p_\sigma$。
 
 ```text
-随机采样 → CEM（精英或指数权）→ MPPI
-              ↗ 信息论 / Log-Sum-Exp
-              ↘ 平滑得分 / 朗之万 → 退火与扩散式 MPC
-                                    CMA 适应 Σ
+预测采样（含当前序列）
+    → CEM（精英权，协方差绕新均值）
+    → MPPI（指数权，固定 Σ）
+         ↗ Log-Sum-Exp 自然梯度
+         ↘ 平滑得分 / 朗之万 → 扩散式退火
+    → CMA（自然梯度更新 Σ，绕采样均值）
 ```
 
 温度、协方差和是否保留噪声，是在同一套语言里调节探索与集中。

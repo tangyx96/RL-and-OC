@@ -4,5 +4,5 @@ Jordana, Zhang, Amigo, Righetti, *An Introduction to Zero-Order Optimization Tec
 
 | 笔记 | 内容 |
 |------|------|
-| [`study-notes/zero-order-optimization-study-notes.md`](study-notes/zero-order-optimization-study-notes.md) | 按论文 §I–§VII |
-| [`study-notes/zero-order-optimal-control-extension.md`](study-notes/zero-order-optimal-control-extension.md) | 采样 → CEM/MPPI → 朗之万 / SVGD / 扩散 |
+| [`study-notes/zero-order-optimization-study-notes.md`](study-notes/zero-order-optimization-study-notes.md) | 按论文 §I–§VI |
+| [`study-notes/zero-order-optimal-control-extension.md`](study-notes/zero-order-optimal-control-extension.md) | 玻尔兹曼目标；CEM、MPPI、朗之万、SVGD、DIAL-MPC 按权重、协方差与扩散项区分 |

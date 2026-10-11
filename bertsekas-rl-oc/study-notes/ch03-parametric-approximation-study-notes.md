@@ -1,7 +1,7 @@
 # 第 3 章 Parametric Approximation — 分节笔记
 
 > **文献**：Bertsekas, *RL and Optimal Control* Ch.3（2019 draft）。  
-> **文本**：[`../source/ch03_clean.txt`](../source/ch03_clean.txt)、[`../source/parts/`](../source/parts/) 下 `ch03_part*.txt`。  
+> **文本**：书稿第 3 章。  
 > **位置**：第 2 章给出 $\tilde J$ 的构造方式；本章固定**架构** $\tilde J_k(x_k,r_k)$ / $\tilde Q_k(x_k,u_k,r_k)$ 与**训练算法**（LS、增量梯度、FVI、拟合 Q），并讨论与 Bellman 目标的偏差。
 
 ---

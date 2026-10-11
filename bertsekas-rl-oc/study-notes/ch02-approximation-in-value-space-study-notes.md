@@ -1,7 +1,7 @@
 # 第 2 章 Approximation in Value Space — 分节笔记
 
 > **文献**：Dimitri P. Bertsekas, *Reinforcement Learning and Optimal Control*（Athena Scientific, 2019 draft）第 2 章。  
-> **文本依据**：[`../source/ch02_clean.txt`](../source/ch02_clean.txt) 及 [`../source/parts/`](../source/parts/) 下 `ch02_part*.txt`。  
+> **文本依据**：书稿第 2 章。  
 > **定位**：第 1 章给出精确 Bellman 结构；本章在 $J_k^{*}$ 不可算时，讨论**次优控制**如何在「方便实现」与「足够好的性能」之间折中。有限时域为主，思想可延拓至第 4–5 章无限时域。
 
 ---

@@ -1,7 +1,7 @@
 # 第 5 章 Infinite Horizon Approximate Methods — 分节笔记
 
 > **文献**：Bertsekas, *RL and Optimal Control* Ch.5（2019 draft，2019-04）。  
-> **文本**：[`../source/ch05_clean.txt`](../source/ch05_clean.txt)、[`../source/parts/`](../source/parts/) 下 `ch05_part*.txt`。  
+> **文本**：书稿第 5 章。  
 > **位置**：Ch.4 给出 SSP/折扣下的精确 VI/PI/Q-learning；本章在**大状态空间**下讨论参数化 FVI、仿真 PI、性能界、探索与振荡，并与 Ch.2–3 的实现细节衔接。本 PDF 版无独立 Aggregation 章，相关内容见 [Ber12] 与书中片段。
 
 ---

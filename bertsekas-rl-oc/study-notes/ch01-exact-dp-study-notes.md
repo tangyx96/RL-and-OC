@@ -1,7 +1,7 @@
 # 第 1 章 Exact Dynamic Programming — 分节读书笔记
 
 > **文献**：Dimitri P. Bertsekas, *Reinforcement Learning and Optimal Control*（Athena Scientific 2019 draft）第 1 章。  
-> **文本来源**：[`../source/ch01_clean.txt`](../source/ch01_clean.txt) / [`../source/full.txt`](../source/full.txt)（非逐页 PDF 对照）。  
+> **文本来源**：书稿第 1 章（非逐页 PDF 对照）。  
 > **章节功能**：全书精确动态规划的理论底座；近似 RL 方法（第 2 章起）均以对 Bellman 结构的理解为前提。
 
 ---

@@ -1,7 +1,7 @@
 # Diffusion Policy 算法笔记
 
 下文公式与流程对应的实现，见官方仓库 [real-stanford/diffusion_policy](https://github.com/real-stanford/diffusion_policy)（Chi et al., RSS 2023；[arXiv:2303.04137](https://arxiv.org/pdf/2303.04137v5)）。  
-同一动作序列接口下的 flow matching 头见 [`flow_matching_notes.md`](flow_matching_notes.md)（π₀ / openpi）。
+同一动作序列接口下的 flow matching 头见 [`flow_matching_notes.md`](flow_matching_notes.md)（π₀ / openpi）。用 PPO 微调该策略见 [`dppo_notes.md`](dppo_notes.md)。
 
 ---
 

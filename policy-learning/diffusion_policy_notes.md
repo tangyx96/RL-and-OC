@@ -112,7 +112,15 @@ D_{\mathrm{KL}}
 \end{aligned}
 $$
 
-第一项不依赖 $\theta$。因此
+第一项只含专家分布 $p^{\ast}$，不依赖 $\theta$。记
+
+$$
+C(\mathbf{o})
+=\mathbb{E}_{p^{\ast}(\cdot\mid\mathbf{o})}\big[\log p^{\ast}(\mathbf{a}\mid\mathbf{o})\big]
+=-H\big(p^{\ast}(\cdot\mid\mathbf{o})\big),
+$$
+
+即给定 $\mathbf{o}$ 时专家动作分布的负熵。因此对每个固定的 $\mathbf{o}$，
 
 $$
 \arg\min_\theta\,
@@ -121,16 +129,37 @@ D_{\mathrm{KL}}\big(p^{\ast}(\cdot\mid\mathbf{o})\,\big\|\,\pi_\theta(\cdot\mid\
 \mathbb{E}_{p^{\ast}(\cdot\mid\mathbf{o})}\big[\log\pi_\theta(\mathbf{a}\mid\mathbf{o})\big].
 $$
 
-再对 $p^{\ast}(\mathbf{o})$ 取期望，
+演示按联合分布 $p^{\ast}(\mathbf{o},\mathbf{a})=p^{\ast}(\mathbf{o})\,p^{\ast}(\mathbf{a}\mid\mathbf{o})$ 采集。所最小化的量是条件 KL 对 $p^{\ast}(\mathbf{o})$ 的期望。将上述分解代入并对 $\mathbf{o}\sim p^{\ast}$ 取期望，
+
+$$
+\begin{aligned}
+&\mathbb{E}_{\mathbf{o}\sim p^{\ast}}\Big[
+D_{\mathrm{KL}}\big(p^{\ast}(\cdot\mid\mathbf{o})\,\big\|\,\pi_\theta(\cdot\mid\mathbf{o})\big)
+\Big]\\
+&\qquad=\mathbb{E}_{\mathbf{o}\sim p^{\ast}}\big[C(\mathbf{o})\big]
+-\mathbb{E}_{\mathbf{o}\sim p^{\ast}}\,
+\mathbb{E}_{p^{\ast}(\cdot\mid\mathbf{o})}\big[\log\pi_\theta(\mathbf{a}\mid\mathbf{o})\big].
+\end{aligned}
+$$
+
+外层按 $p^{\ast}(\mathbf{o})$、内层按 $p^{\ast}(\mathbf{a}\mid\mathbf{o})$，与直接对联合分布取期望相同：
+
+$$
+\mathbb{E}_{\mathbf{o}\sim p^{\ast}}\,
+\mathbb{E}_{p^{\ast}(\cdot\mid\mathbf{o})}\big[\log\pi_\theta(\mathbf{a}\mid\mathbf{o})\big]
+=\mathbb{E}_{(\mathbf{o},\mathbf{a})\sim p^{\ast}}\big[\log\pi_\theta(\mathbf{a}\mid\mathbf{o})\big].
+$$
+
+令 $C=\mathbb{E}_{\mathbf{o}\sim p^{\ast}}[C(\mathbf{o})]=\mathbb{E}_{(\mathbf{o},\mathbf{a})\sim p^{\ast}}[\log p^{\ast}(\mathbf{a}\mid\mathbf{o})]$。$C$ 与 $\theta$ 无关，故
 
 $$
 \mathbb{E}_{\mathbf{o}\sim p^{\ast}}\Big[
 D_{\mathrm{KL}}\big(p^{\ast}(\cdot\mid\mathbf{o})\,\big\|\,\pi_\theta(\cdot\mid\mathbf{o})\big)
 \Big]
-=C+\mathbb{E}_{(\mathbf{o},\mathbf{a})\sim p^{\ast}}\big[-\log\pi_\theta(\mathbf{a}\mid\mathbf{o})\big],
+=C+\mathbb{E}_{(\mathbf{o},\mathbf{a})\sim p^{\ast}}\big[-\log\pi_\theta(\mathbf{a}\mid\mathbf{o})\big].
 $$
 
-其中 $C$ 与 $\theta$ 无关。用经验分布代替 $p^{\ast}$ 即得 $\mathcal{L}_{\mathrm{NLL}}$。故极大似然等价于在专家占用上最小化 $D_{\mathrm{KL}}(p^{\ast}(\cdot\mid\mathbf{o})\,\|\,\pi_\theta(\cdot\mid\mathbf{o}))$。
+$C$ 不进入优化，右端与 $\mathcal{L}_{\mathrm{NLL}}$ 只差以经验分布代替 $p^{\ast}$。极大似然因此等价于在专家占用上最小化条件正向 KL。
 
 #### 2.2.3 高斯策略下的最小二乘
 

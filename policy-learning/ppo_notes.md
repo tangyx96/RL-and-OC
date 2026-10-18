@@ -323,6 +323,7 @@ $$
 $$
 \nabla_\theta L^{\mathrm{CLIP}}
 =
+\mathbb{E}\left[
 \begin{cases}
 r_t(\theta)\,\nabla_\theta\log\pi_\theta(a_t\mid s_t)\,\hat A_t,
 & \hat A_t\ge 0,\; r_t\le 1+\epsilon
@@ -331,6 +332,7 @@ r_t(\theta)\,\nabla_\theta\log\pi_\theta(a_t\mid s_t)\,\hat A_t,
 0,
 & \text{其余}.
 \end{cases}
+\right].
 $$
 
 $\hat A_t>0$ 且 $r_t<1-\epsilon$，或 $\hat A_t<0$ 且 $r_t>1+\epsilon$ 时，比率虽已离开 $[1-\epsilon,1+\epsilon]$，仍走未裁剪支路。
@@ -649,3 +651,25 @@ $$
 | `vf_coef` | 0.5 | 价值损失权重 |
 | `max_grad_norm` | 0.5 | 梯度裁剪阈值 |
 | `target_kl` | 不启用 | 估计 KL 超过该值则结束本批更新 |
+
+---
+
+## 十四、直观理解
+
+策略梯度在当前策略采得的样本上，对 $\nabla_\theta\log\pi_\theta(a_t\mid s_t)$ 作加权平均，权重是优势 $\hat A_t\approx Q^\pi(s_t,a_t)-V^\pi(s_t)$。
+
+$\nabla_\theta\log\pi_\theta(a_t\mid s_t)$ 是参数空间中提高 $\log\pi_\theta(a_t\mid s_t)$、从而局部增大动作 $a_t$ 概率的方向。更新沿该方向与 $\hat A_t$ 的乘积前进。$\hat A_t>0$ 时乘数为正，方向不变，参数沿 $\nabla_\theta\log\pi_\theta$ 移动，$a_t$ 的概率上升。$\hat A_t<0$ 时乘数为负，方向反转，参数沿相反方向移动，$a_t$ 的概率下降。
+
+同一批数据上参数会离开采样时的 $\theta_{\mathrm{old}}$。未裁剪支路的梯度为
+
+$$
+r_t(\theta)\,\nabla_\theta\log\pi_\theta(a_t\mid s_t)\,\hat A_t,
+\qquad
+r_t(\theta)=\frac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{\mathrm{old}}}(a_t\mid s_t)}.
+$$
+
+第一步 $r_t=1$，上式的期望即策略梯度。其后 $r_t$ 是重要性比：动作仍是旧策略抽出的，用它把目标改写成对新策略的估计。限制步长的是裁剪。$\hat A_t>0$ 且 $r_t>1+\epsilon$ 时，好动作的概率已超过旧策略的 $1+\epsilon$ 倍，$\min$ 取常数 $(1+\epsilon)\hat A_t$，梯度为零。$\hat A_t<0$ 且 $r_t<1-\epsilon$ 时，坏动作的概率已低于 $1-\epsilon$ 倍，同样停住。反向越界仍走 $r_t\hat A_t$，把比率拉回。
+
+$\log\pi_\theta(a\mid s)$ 与采集时写下的 $\log\pi_{\theta_{\mathrm{old}}}(a\mid s)$ 都是标量。连续动作下由对角高斯密度算出，$r_t$ 是二者之差的指数。$\nabla_\theta\log\pi_\theta$ 对全部参数取值，维数等于 $\theta$，由反向传播得到。
+
+`update_epochs` 用完后丢弃该批。下一批动作由更新后的 $\pi_\theta$ 重新采样。

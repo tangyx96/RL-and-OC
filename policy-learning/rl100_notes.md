@@ -98,16 +98,58 @@ $K$ 次高斯转移产生一个送去执行的动作。环境转移只依赖这�
 
 ## 三、随机 DDIM 的对数概率
 
-PPO 需要 $\log\pi_\theta(a^{\tau_{k-1}}\mid a^{\tau_k},c_t)$。确定性 DDIM 的转移是 Dirac 分布，对数密度没有定义，因此训练使用带方差的随机形式。下文的 $\bar\alpha$ 是累积乘积；DDIM 原文把这个量记成 $\alpha_t$。
+### 3.1 对数概率
 
-前向边际（Diffusion Policy 笔记第 2.4.4 节）是
+PPO 需要 $\log\pi_\theta(a^{\tau_{k-1}}\mid a^{\tau_k},c_t)$。确定性 DDIM 的转移是 Dirac 分布，对数密度没有定义，训练使用带方差的随机形式。$\bar\alpha$ 是累积乘积；DDIM 原文把这个量记成 $\alpha_t$。$t>m$ 为子采样日程上相邻的噪声下标。
+
+网络由 $\epsilon_\theta(a^{t},t,c_t)$ 还原干净动作
+
+$$
+\hat a^{0}
+=\frac{a^{t}-\sqrt{1-\bar\alpha_t}\,\epsilon_\theta(a^{t},t,c_t)}{\sqrt{\bar\alpha_t}}.
+$$
+
+一步转移是
+
+$$
+\begin{aligned}
+\mu_\theta(a^{t},t\to m)
+&=\sqrt{\bar\alpha_m}\,\hat a^{0}
++\sqrt{1-\bar\alpha_m-\sigma_{t\to m}^{2}}\;\epsilon_\theta(a^{t},t,c_t),\\
+a^{m}
+&=\mu_\theta+\sigma_{t\to m}\,\varepsilon,
+\qquad\varepsilon\sim\mathcal{N}(0,I).
+\end{aligned}
+$$
+
+$\sigma_{t\to m}>0$ 时这一步是各向同性高斯
+
+$$
+\pi_\theta(a^{m}\mid a^{t},t\to m)
+=\mathcal{N}\big(\mu_\theta,\,\sigma_{t\to m}^{2} I\big),
+$$
+
+$$
+\log\pi_\theta
+=-\frac{1}{2\sigma_{t\to m}^{2}}\|a^{m}-\mu_\theta\|^2+C,
+\qquad
+C=-\frac{d}{2}\log(2\pi\sigma_{t\to m}^{2}).
+$$
+
+$\sigma_{t\to m}$ 由日程与 $\eta$ 给定、不依赖 $\theta$ 时，$C$ 的梯度为零，$\mu_\theta$ 对 $\epsilon_\theta$ 是仿射，策略梯度只经过噪声网络。$\eta$ 由网络输出时，$\sigma_{t\to m}$ 进入 $C$、$1/(2\sigma_{t\to m}^{2})$ 以及 $\mu_\theta$ 中的 $\sqrt{1-\bar\alpha_m-\sigma_{t\to m}^{2}}$。
+
+### 3.2 由前向边际推导
+
+Diffusion Policy 笔记第 2.4.4 节的前向边际是
 
 $$
 q(a^{s}\mid a^{0})
 =\mathcal{N}\!\big(\sqrt{\bar\alpha_s}\,a^{0},\,(1-\bar\alpha_s)I\big),
 $$
 
-即 $a^{s}=\sqrt{\bar\alpha_s}\,a^{0}+\sqrt{1-\bar\alpha_s}\,\epsilon_s$，$\epsilon_s\sim\mathcal{N}(0,I)$。训练损失只依赖这些边际，所以从 $t$ 跳到 $m<t$ 时，只要 $q(a^{m}\mid a^{0})$ 不变，中间下标可以不出现在转移里。$t$ 与 $m$ 取子采样日程上的相邻下标，对数概率也只含这一步。
+即 $a^{s}=\sqrt{\bar\alpha_s}\,a^{0}+\sqrt{1-\bar\alpha_s}\,\epsilon_s$，$\epsilon_s\sim\mathcal{N}(0,I)$。训练损失只依赖这些边际。采样的一步从噪声水平 $t$ 走到 $m$，$t>m$，中间的训练下标可以空着。下面四步给出这一步的核。
+
+#### （1）证明 $q(a^{m}\mid a^{t},a^{0})$
 
 给定 $a^{0}$，$a^{t}$ 中的噪声是
 
@@ -130,12 +172,16 @@ a^{m}
 =\sqrt{\bar\alpha_m}\,a^{0}+\sqrt{1-\bar\alpha_m}\,\epsilon_m
 $$
 
-自动满足 $m$ 档的前向边际。新鲜噪声的系数记为 $\sigma_{t\to m}$，
+它满足 $m$ 档的前向边际。将 $\epsilon_m$ 代入后，与 $\epsilon_t$ 独立的 $\varepsilon$ 前的系数记为
 
 $$
 \sigma_{t\to m}
-=\sqrt{1-\bar\alpha_m}\,\sqrt{1-c^{2}},
-\qquad
+=\sqrt{1-\bar\alpha_m}\,\sqrt{1-c^{2}}.
+$$
+
+平方并移项得 $(1-\bar\alpha_m)c^{2}=1-\bar\alpha_m-\sigma_{t\to m}^{2}$。$c\in[0,1]$，故 $\epsilon_t$ 的系数是
+
+$$
 \sqrt{1-\bar\alpha_m}\,c
 =\sqrt{1-\bar\alpha_m-\sigma_{t\to m}^{2}}.
 $$
@@ -149,7 +195,7 @@ a^{m}
 +\sigma_{t\to m}\,\varepsilon.
 $$
 
-给定 $(a^{t},a^{0})$ 时 $\epsilon_t$ 已由 $a^{t}$ 确定，随机性只剩 $\varepsilon$，故 DDIM 式 (7)
+给定 $(a^{t},a^{0})$ 时 $\epsilon_t$ 已由 $a^{t}$ 确定，随机性只剩 $\varepsilon$，条件分布为下面的高斯。它即 DDIM 论文中的式 (7)：
 
 $$
 q(a^{m}\mid a^{t},a^{0})
@@ -163,69 +209,275 @@ $$
 
 $c^{2}\ge 0$ 要求 $0\le\sigma_{t\to m}\le\sqrt{1-\bar\alpha_m}$。
 
-再对 $a^{t}$ 积分，确认边际与 $\sigma_{t\to m}$ 无关。固定 $a^{0}$ 时 $\epsilon_t$ 与 $\varepsilon$ 独立、方差都是 $I$，
+#### （2）证明 $q(a^{m}\mid a^{0})$ 不依赖 $\sigma_{t\to m}$
+
+边际由条件分布对 $a^{t}$ 积分得到，
+
+$$
+q(a^{m}\mid a^{0})
+=\int q(a^{m}\mid a^{t},a^{0})\,q(a^{t}\mid a^{0})\,\mathrm{d}a^{t}.
+$$
+
+$q(a^{t}\mid a^{0})=\mathcal{N}(\sqrt{\bar\alpha_t}\,a^{0},\,(1-\bar\alpha_t)I)$ 即
+
+$$
+a^{t}
+=\sqrt{\bar\alpha_t}\,a^{0}+\sqrt{1-\bar\alpha_t}\,\epsilon_t,
+\qquad
+\epsilon_t\sim\mathcal{N}(0,I).
+$$
+
+条件均值中的分数就是该噪声，
+
+$$
+\frac{a^{t}-\sqrt{\bar\alpha_t}\,a^{0}}{\sqrt{1-\bar\alpha_t}}
+=\epsilon_t.
+$$
+
+该高斯的密度是
+
+$$
+q(a^{t}\mid a^{0})
+=(2\pi(1-\bar\alpha_t))^{-d/2}
+\exp\Bigl(
+-\frac{\|a^{t}-\sqrt{\bar\alpha_t}\,a^{0}\|^2}{2(1-\bar\alpha_t)}
+\Bigr).
+$$
+
+指数中的平方写成 $\epsilon_t$，
+
+$$
+\frac{\|a^{t}-\sqrt{\bar\alpha_t}\,a^{0}\|^2}{1-\bar\alpha_t}
+=\|\epsilon_t\|^2,
+$$
+
+故
+
+$$
+q(a^{t}\mid a^{0})
+=(2\pi(1-\bar\alpha_t))^{-d/2}
+\exp\bigl(-\tfrac12\|\epsilon_t\|^2\bigr).
+$$
+
+映射 $\epsilon_t\mapsto a^{t}$ 的雅可比矩阵是 $\sqrt{1-\bar\alpha_t}\,I$，行列式为 $\bigl(\sqrt{1-\bar\alpha_t}\bigr)^{d}=(1-\bar\alpha_t)^{d/2}$，
+
+$$
+\mathrm{d}a^{t}
+=(1-\bar\alpha_t)^{d/2}\,\mathrm{d}\epsilon_t.
+$$
+
+归一化常数中的 $(1-\bar\alpha_t)^{-d/2}$ 与这个因子相乘为 $1$：
+
+$$
+\begin{aligned}
+q(a^{t}\mid a^{0})\,\mathrm{d}a^{t}
+&=(2\pi(1-\bar\alpha_t))^{-d/2}
+\exp\bigl(-\tfrac12\|\epsilon_t\|^2\bigr)
+\cdot(1-\bar\alpha_t)^{d/2}\,\mathrm{d}\epsilon_t\\
+&=(2\pi)^{-d/2}
+\exp\bigl(-\tfrac12\|\epsilon_t\|^2\bigr)\,\mathrm{d}\epsilon_t.
+\end{aligned}
+$$
+
+因此对 $a^{t}$ 积分等于对 $\epsilon_t$ 取期望。条件分布里余下的随机性是与 $\epsilon_t$ 独立的 $\varepsilon\sim\mathcal{N}(0,I)$，被积的样本为
+
+$$
+a^{m}
+=\sqrt{\bar\alpha_m}\,a^{0}
++\sqrt{1-\bar\alpha_m-\sigma_{t\to m}^{2}}\,\epsilon_t
++\sigma_{t\to m}\,\varepsilon.
+$$
+
+$\mathbb{E}[\epsilon_t]=\mathbb{E}[\varepsilon]=0$，故
 
 $$
 \begin{aligned}
 \mathbb{E}[a^{m}\mid a^{0}]
-&=\sqrt{\bar\alpha_m}\,a^{0},\\
-\mathrm{Var}(a^{m}\mid a^{0})
-&=(1-\bar\alpha_m-\sigma_{t\to m}^{2})+\sigma_{t\to m}^{2}
-=1-\bar\alpha_m.
+&=\sqrt{\bar\alpha_m}\,a^{0}
++\sqrt{1-\bar\alpha_m-\sigma_{t\to m}^{2}}\,\mathbb{E}[\epsilon_t]
++\sigma_{t\to m}\,\mathbb{E}[\varepsilon]\\
+&=\sqrt{\bar\alpha_m}\,a^{0}.
 \end{aligned}
 $$
 
-因此 $q(a^{m}\mid a^{0})=\mathcal{N}(\sqrt{\bar\alpha_m}\,a^{0},\,(1-\bar\alpha_m)I)$。这是 DDIM 附录 Lemma 1：在根号有定义的范围内，改变 $\sigma_{t\to m}$ 不改变训练所用的边际。
+$\mathrm{Cov}(\epsilon_t,\varepsilon)=0$。$z\sim\mathcal{N}(0,I)$ 时 $\mathrm{Var}(cz)=c^{2}I$，交叉项不出现：
 
-$\sigma_{t\to m}$ 还须在这个族里取定。取由 $m$ 到 $t$ 的一步高斯
+$$
+\begin{aligned}
+\mathrm{Var}(a^{m}\mid a^{0})
+&=(1-\bar\alpha_m-\sigma_{t\to m}^{2})\,\mathrm{Var}(\epsilon_t)
++\sigma_{t\to m}^{2}\,\mathrm{Var}(\varepsilon)\\
+&\quad
++2\sigma_{t\to m}\sqrt{1-\bar\alpha_m-\sigma_{t\to m}^{2}}\,
+\mathrm{Cov}(\epsilon_t,\varepsilon)\\
+&=(1-\bar\alpha_m-\sigma_{t\to m}^{2})I+\sigma_{t\to m}^{2}I
+=(1-\bar\alpha_m)I.
+\end{aligned}
+$$
+
+$(\epsilon_t,\varepsilon)$ 联合为 $\mathcal{N}(0,I_{2d})$，$a^{m}$ 是它的仿射像，边际由上面的均值与方差确定：
+
+$$
+q(a^{m}\mid a^{0})
+=\mathcal{N}\!\big(\sqrt{\bar\alpha_m}\,a^{0},\,(1-\bar\alpha_m)I\big).
+$$
+
+$\sigma_{t\to m}^{2}$ 在方差中相消。这是 DDIM 附录 Lemma 1：在根号有定义的范围内，改变 $\sigma_{t\to m}$ 不改变训练所用的边际。中间的训练下标因此不进入转移。
+
+#### （3）证明 $\sigma_{t\to m}$ 取后验标准差
+
+（1）中的 $\sigma_{t\to m}$ 只满足 $0\le\sigma_{t\to m}\le\sqrt{1-\bar\alpha_m}$。下面把它取成由 $m$ 走到 $t$ 的后验标准差。
+
+$a^{m}$ 已服从 $q(a^{m}\mid a^{0})$。再加一层独立噪声 $\varepsilon'\sim\mathcal{N}(0,I)$，
+
+$$
+a^{t}=\sqrt{\gamma}\,a^{m}+\sqrt{1-\gamma}\,\varepsilon'.
+$$
+
+要让 $a^{t}$ 仍服从 $q(a^{t}\mid a^{0})=\mathcal{N}(\sqrt{\bar\alpha_t}\,a^{0},\,(1-\bar\alpha_t)I)$，取 $\gamma=\bar\alpha_t/\bar\alpha_m$。将 $a^{m}=\sqrt{\bar\alpha_m}\,a^{0}+\sqrt{1-\bar\alpha_m}\,\epsilon_m$ 代入。$\epsilon_m$ 与 $\varepsilon'$ 独立且均值为 $0$，
+
+$$
+\begin{aligned}
+\mathbb{E}[a^{t}\mid a^{0}]
+&=\sqrt{\gamma\bar\alpha_m}\,a^{0}
+=\sqrt{\bar\alpha_t}\,a^{0},\\
+\mathrm{Var}(a^{t}\mid a^{0})
+&=\gamma(1-\bar\alpha_m)I+(1-\gamma)I
+=(1-\gamma\bar\alpha_m)I
+=(1-\bar\alpha_t)I.
+\end{aligned}
+$$
+
+这一步的系数不读取 $a^{0}$，故 $q(a^{t}\mid a^{m},a^{0})=q(a^{t}\mid a^{m})$，
 
 $$
 q(a^{t}\mid a^{m})
-=\mathcal{N}\!\big(\sqrt{\gamma}\,a^{m},\,(1-\gamma)I\big),
+=\mathcal{N}\!\big(\sqrt{\gamma}\,a^{m},\,(1-\gamma)I\big).
+$$
+
+贝叶斯公式
+
+$$
+q(a^{m}\mid a^{t},a^{0})
+=\frac{q(a^{t}\mid a^{m})\,q(a^{m}\mid a^{0})}{q(a^{t}\mid a^{0})}.
+$$
+
+分母不含 $a^{m}$，后验正比于分子。记 $\beta=1-\gamma$。似然对 $a^{m}$ 配平方，
+
+$$
+\|a^{t}-\sqrt{\gamma}\,a^{m}\|^2
+=\gamma\Bigl\|a^{m}-\frac{a^{t}}{\sqrt{\gamma}}\Bigr\|^2,
+$$
+
+$$
+q(a^{t}\mid a^{m})
+\propto
+\exp\Bigl(
+-\frac{\gamma}{2\beta}
+\Bigl\|a^{m}-\frac{a^{t}}{\sqrt{\gamma}}\Bigr\|^2
+\Bigr).
+$$
+
+指数与 $\mathcal{N}(a^{t}/\sqrt{\gamma},\,(\beta/\gamma)I)$ 相同，归一化常数不同，精度为 $\tau_1=\gamma/\beta$。先验 $q(a^{m}\mid a^{0})=\mathcal{N}(\sqrt{\bar\alpha_m}\,a^{0},\,(1-\bar\alpha_m)I)$ 的精度为 $\tau_2=1/(1-\bar\alpha_m)$。两个高斯核相乘，精度相加、均值按精度加权（Diffusion Policy 笔记附录 A.3）：
+
+$$
+\frac{1}{\sigma^{2}}
+=\tau_1+\tau_2
+=\frac{1}{1-\bar\alpha_m}+\frac{\gamma}{\beta},
 \qquad
-\gamma=\bar\alpha_t/\bar\alpha_m,
-$$
-
-它与 $q(a^{m}\mid a^{0})$ 的乘积给出 $q(a^{m}\mid a^{t},a^{0})$。记 $\beta=1-\gamma$，后验精度是先验精度加似然精度，
-
-$$
-\frac{1}{1-\bar\alpha_m}+\frac{\gamma}{\beta}.
-$$
-
-后验方差为
-
-$$
 \sigma^{2}
-=\left(\frac{1}{1-\bar\alpha_m}+\frac{\gamma}{\beta}\right)^{-1}
 =\frac{(1-\bar\alpha_m)\,\beta}{\beta+\gamma(1-\bar\alpha_m)}.
 $$
 
-分母 $\beta+\gamma(1-\bar\alpha_m)=1-\gamma\bar\alpha_m=1-\bar\alpha_t$，故
+分母 $\beta+\gamma(1-\bar\alpha_m)=1-\gamma+\gamma-\gamma\bar\alpha_m=1-\bar\alpha_t$，而 $\beta=1-\bar\alpha_t/\bar\alpha_m$，故
 
 $$
 \sigma^{2}
 =\frac{1-\bar\alpha_m}{1-\bar\alpha_t}\left(1-\frac{\bar\alpha_t}{\bar\alpha_m}\right).
 $$
 
-后验均值是
+后验均值
 
 $$
-\sqrt{\bar\alpha_m}\,a^{0}
+\mu
+=\sigma^{2}\Bigl(
+\tau_1\cdot\frac{a^{t}}{\sqrt{\gamma}}
++\tau_2\cdot\sqrt{\bar\alpha_m}\,a^{0}
+\Bigr).
+$$
+
+两项的系数是
+
+$$
+\sigma^{2}\cdot\frac{\tau_1}{\sqrt{\gamma}}
+=\sigma^{2}\cdot\frac{\sqrt{\gamma}}{\beta}
+=\frac{(1-\bar\alpha_m)\sqrt{\gamma}}{1-\bar\alpha_t},
+\qquad
+\sigma^{2}\cdot\tau_2\cdot\sqrt{\bar\alpha_m}
+=\frac{\beta\sqrt{\bar\alpha_m}}{1-\bar\alpha_t}.
+$$
+
+$$
+\mu
+=\frac{\beta\sqrt{\bar\alpha_m}}{1-\bar\alpha_t}\,a^{0}
++\frac{(1-\bar\alpha_m)\sqrt{\gamma}}{1-\bar\alpha_t}\,a^{t}.
+$$
+
+用 $\sqrt{\bar\alpha_t}=\sqrt{\gamma\bar\alpha_m}$ 把上式收成 $\sqrt{\bar\alpha_m}\,a^{0}$ 加上 $(a^{t}-\sqrt{\bar\alpha_t}\,a^{0})$ 的倍数。$a^{t}$ 那一项乘 $\sqrt{\bar\alpha_t}$ 得
+
+$$
+\frac{(1-\bar\alpha_m)\sqrt{\gamma}}{1-\bar\alpha_t}\cdot\sqrt{\bar\alpha_t}
+=\frac{(1-\bar\alpha_m)\,\gamma\,\sqrt{\bar\alpha_m}}{1-\bar\alpha_t},
+$$
+
+$a^{0}$ 的系数减去它，
+
+$$
+\sqrt{\bar\alpha_m}
+-\frac{(1-\bar\alpha_m)\,\gamma\,\sqrt{\bar\alpha_m}}{1-\bar\alpha_t}
+=\sqrt{\bar\alpha_m}\cdot\frac{1-\bar\alpha_t-\gamma+\gamma\bar\alpha_m}{1-\bar\alpha_t}
+=\sqrt{\bar\alpha_m}\cdot\frac{\beta}{1-\bar\alpha_t}.
+$$
+
+这里用了 $\gamma\bar\alpha_m=\bar\alpha_t$，分子化为 $1-\gamma=\beta$。因此
+
+$$
+\mu
+=\sqrt{\bar\alpha_m}\,a^{0}
 +\frac{(1-\bar\alpha_m)\sqrt{\gamma}}{1-\bar\alpha_t}
 \big(a^{t}-\sqrt{\bar\alpha_t}\,a^{0}\big).
 $$
 
-把上面的 $\sigma^{2}$ 代入条件分布的方向系数，
+（1）中条件分布的均值是
 
 $$
-1-\bar\alpha_m-\sigma^{2}
-=\frac{\gamma\,(1-\bar\alpha_m)^{2}}{1-\bar\alpha_t},
-\qquad
+\sqrt{\bar\alpha_m}\,a^{0}
++\sqrt{1-\bar\alpha_m-\sigma^{2}}\;
+\frac{a^{t}-\sqrt{\bar\alpha_t}\,a^{0}}{\sqrt{1-\bar\alpha_t}}.
+$$
+
+二者一致，当
+
+$$
 \sqrt{1-\bar\alpha_m-\sigma^{2}}
-=\frac{(1-\bar\alpha_m)\sqrt{\gamma}}{\sqrt{1-\bar\alpha_t}},
+=\frac{(1-\bar\alpha_m)\sqrt{\gamma}}{\sqrt{1-\bar\alpha_t}}.
 $$
 
-除以 $\sqrt{1-\bar\alpha_t}$ 后与后验均值的系数相同。因此这个 $\sigma^{2}$ 使式 (7) 正好是该一步高斯的后验。$m$ 为 $t$ 的前一档时，$\gamma=\alpha_t=1-\beta_t$，方差即 Diffusion Policy 笔记第 4.2 节的 $\tilde\beta_t$。$m$ 与 $t$ 不相邻时，同一式子是子序列上这一步的后验方差，中间下标不参与。
+将 $\sigma^{2}=(1-\bar\alpha_m)\beta/(1-\bar\alpha_t)$ 代入左边的平方，
+
+$$
+\begin{aligned}
+1-\bar\alpha_m-\sigma^{2}
+&=(1-\bar\alpha_m)\Bigl(1-\frac{\beta}{1-\bar\alpha_t}\Bigr)
+=(1-\bar\alpha_m)\frac{1-\bar\alpha_t-\beta}{1-\bar\alpha_t}\\
+&=(1-\bar\alpha_m)\frac{\gamma-\bar\alpha_t}{1-\bar\alpha_t}
+=\frac{\gamma\,(1-\bar\alpha_m)^{2}}{1-\bar\alpha_t},
+\end{aligned}
+$$
+
+其中 $\gamma-\bar\alpha_t=\gamma(1-\bar\alpha_m)$。开方即得上一式。所以（1）中的条件分布在这个 $\sigma^{2}$ 下就是后验 $\mathcal{N}(\mu,\sigma^{2}I)$。
+
+$m$ 为 $t$ 的前一档时，$\gamma=\alpha_t=1-\beta_t$，该方差即 Diffusion Policy 笔记第 4.2 节的 $\tilde\beta_t$。$m$ 与 $t$ 不相邻时，$\gamma$ 只含 $\bar\alpha_t$ 与 $\bar\alpha_m$，中间下标不参与。
 
 DDIM 用 $\eta\ge 0$ 缩放这条标准差，
 
@@ -234,29 +486,13 @@ $$
 =\eta\sqrt{\frac{1-\bar\alpha_m}{1-\bar\alpha_t}\left(1-\frac{\bar\alpha_t}{\bar\alpha_m}\right)}.
 $$
 
-$\eta=0$ 时转移退化到后验均值，$\eta=1$ 时方差等于上述后验方差。$\eta\in[0,1]$ 时 $\sigma_{t\to m}^{2}\le 1-\bar\alpha_m$。
+$\eta$ 改变 $\sigma_{t\to m}$，（1）中 $\epsilon_t$ 的系数 $\sqrt{1-\bar\alpha_m-\sigma_{t\to m}^{2}}$ 随之改变。$\eta=1$ 时方差与均值都是这一后验。$\eta=0$ 时方差为零，该系数回到 $\sqrt{1-\bar\alpha_m}$。$\eta\in[0,1]$ 时 $\sigma_{t\to m}^{2}\le 1-\bar\alpha_m$。
 
-采样时没有 $a^{0}$。用 $\epsilon_\theta(a^{t},t,c_t)$ 代替 $\epsilon_t$，并由此还原
+#### （4）证明该采样式即 3.1 节的 $\mu_\theta$
 
-$$
-\hat a^{0}
-=\frac{a^{t}-\sqrt{1-\bar\alpha_t}\,\epsilon_\theta(a^{t},t,c_t)}{\sqrt{\bar\alpha_t}},
-$$
+采样时没有 $a^{0}$。以 $\epsilon_\theta(a^{t},t,c_t)$ 代替 $\epsilon_t$，并按 3.1 节还原 $\hat a^{0}$，代入（1）的条件分布，即得 3.1 节的 $\mu_\theta$。
 
-代入式 (7) 的均值，得到 RL-100 式 (5)
-
-$$
-\begin{aligned}
-\mu_\theta(a^{t},t\to m)
-&=\sqrt{\bar\alpha_m}\,\hat a^{0}
-+\sqrt{1-\bar\alpha_m-\sigma_{t\to m}^{2}}\;\epsilon_\theta(a^{t},t,c_t),\\
-a^{m}
-&=\mu_\theta+\sigma_{t\to m}\,\varepsilon,
-\qquad\varepsilon\sim\mathcal{N}(0,I).
-\end{aligned}
-$$
-
-$\sigma_{t\to m}=0$ 时第二项消失，系数回到 $\sqrt{1-\bar\alpha_m}$，
+$\sigma_{t\to m}=0$ 时新噪声 $\sigma_{t\to m}\varepsilon$ 消失，$\epsilon_\theta$ 的系数回到 $\sqrt{1-\bar\alpha_m}$，
 
 $$
 a^{m}
@@ -293,24 +529,6 @@ $$
 $$
 
 这条 $\sigma_{t\to m}$ 使前向过程回到 Markov 链，生成过程回到 DDPM。
-
-$\sigma_{t\to m}>0$ 时这一步是各向同性高斯
-
-$$
-\pi_\theta(a^{m}\mid a^{t},t\to m)
-=\mathcal{N}\big(\mu_\theta,\,\sigma_{t\to m}^{2} I\big),
-$$
-
-$$
-\log\pi_\theta
-=-\frac{1}{2\sigma_{t\to m}^{2}}\|a^{m}-\mu_\theta\|^2+C,
-\qquad
-C=-\frac{d}{2}\log(2\pi\sigma_{t\to m}^{2}).
-$$
-
-$\sigma_{t\to m}$ 不依赖 $\theta$ 时，$C$ 的梯度为零，$\mu_\theta$ 对 $\epsilon_\theta$ 是仿射，策略梯度只经过这个网络。$\eta$ 改为网络输出时 $\sigma_{t\to m}$ 依赖 $\theta$，$C$ 也进入梯度。
-
-`ddim_step_with_logprob` 对 batch 以外的维度将对数密度取平均，再交给上层。`update_distribution` 与 `dp_align_update_no_share` 将执行窗口上的对数概率相加后取指数，裁剪作用于该标量比值。若在窗口内直接累加各坐标的对数密度，比值会随 $n_c d_a$ 偏离 $1$，大量样本会落在裁剪边界 $1\pm\epsilon$ 上。先取平均、再沿执行步求和，用于控制该比值的尺度。DPPO 笔记第 6.1 节将同一处理写为几何平均。
 
 ---
 
@@ -353,7 +571,7 @@ $\pi_i$ 是第 $i$ 次迭代的行为策略，也是采样这条链的网络。�
 
 实现中，每个去噪步计算自身的裁剪损失后即执行一次 `optimizer.step()`。离线更新位于 `update_distribution` 的时间步循环内，在线更新位于 `dp_align_update_no_share` 内。下一步的似然比使用刚刚更新的网络。论文将 $K$ 步写入同一次期望中的求和。学习率较小时，二者接近；学习率较大时，逐步更新使链的后段使用前段已经改变的参数。
 
-动作块有两种把比值收成标量的方式，由 `offline_chunk_ratio_mode` 选择。`scalar` 把窗口内全部坐标的对数概率加总后再取指数，整块一个比值。`per_step` 对块内每个环境步各算一个比值。默认的优势是整块一个数，乘到每一个去噪步上。
+动作块由 `offline_chunk_ratio_mode` 选择比值的归约。`scalar` 将窗口内各坐标的对数概率相加后取指数，整块共用一个比值。和的长度是 $n_c d_a$，比值随这个维数离开 $1$，大量样本落在 $1\pm\epsilon$ 上。`per_step` 对块内每个环境步各算一个比值，只累加该步的 $d_a$ 个坐标。默认优势是整块一个数，乘到每一个去噪步上。DPPO 笔记第 6.1 节对执行坐标取几何平均，维数留在平均的分母里。
 
 ---
 

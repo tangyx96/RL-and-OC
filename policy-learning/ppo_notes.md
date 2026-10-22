@@ -507,7 +507,9 @@ $\lambda$ 不是再乘一个折扣，而是在「信模型 $V$」与「信轨迹
 
 ---
 
-## 九、完整训练流程
+## 九、训练过程
+
+### 9.1 完整训练流程
 
 ```text
 1. 用当前策略 π_θ 与环境交互，收集 num_steps 步数据
@@ -531,6 +533,24 @@ $\lambda$ 不是再乘一个折扣，而是在「信模型 $V$」与「信轨迹
 
 5. 丢弃旧数据，回到步骤 1
 ```
+
+### 9.2 单次更新过程
+
+（1）**优势加权。** 策略梯度在当前策略采得的样本上，对 $\nabla_\theta\log\pi_\theta(a_t\mid s_t)$ 作加权平均，权重是优势 $\hat A_t\approx Q^\pi(s_t,a_t)-V^\pi(s_t)$。在参数空间中，该梯度指向 $\log\pi_\theta(a_t\mid s_t)$ 的上升方向；沿它走一小步，$a_t$ 的概率局部增大。更新沿它与 $\hat A_t$ 的乘积前进：$\hat A_t>0$ 时 $a_t$ 的概率上升，$\hat A_t<0$ 时下降。
+
+（2）**重要性比。** 同一批数据上 $\theta$ 离开采样时的 $\theta_{\mathrm{old}}$。$\min$ 取 $r_t\hat A_t$ 时，梯度为
+
+$$
+r_t(\theta)\,\nabla_\theta\log\pi_\theta(a_t\mid s_t)\,\hat A_t,
+\qquad
+r_t(\theta)=\frac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{\mathrm{old}}}(a_t\mid s_t)}.
+$$
+
+第一步 $r_t=1$，其期望即策略梯度。其后 $r_t$ 把旧动作上的目标改写成对新策略的估计。$\log\pi_\theta(a\mid s)$ 与采集时的 $\log\pi_{\theta_{\mathrm{old}}}(a\mid s)$ 都是标量；连续动作由对角高斯密度算出，$r_t$ 是二者之差的指数。$\nabla_\theta\log\pi_\theta$ 的维数等于 $\theta$，由反向传播得到。
+
+（3）**裁剪。** $\hat A_t>0$ 且 $r_t>1+\epsilon$ 时，该动作的概率已超过旧策略的 $1+\epsilon$ 倍，$\min$ 取常数 $(1+\epsilon)\hat A_t$，梯度为零。$\hat A_t<0$ 且 $r_t<1-\epsilon$ 时，概率已低于 $1-\epsilon$ 倍，同样停住。反向越界仍沿 $r_t\hat A_t$ 把比率拉回。
+
+（4）**弃批。** `update_epochs` 结束后丢弃该批。下一批动作由更新后的 $\pi_\theta$ 重新采样。
 
 ---
 
@@ -568,7 +588,7 @@ $$
 
 ### 10.2 价值损失 $L^{VF}$
 
-回归目标是 GAE 回报（第九节）：$\hat{R}_t = \hat{A}_t + V_{\theta_{old}}(s_t)$。未裁剪时为 MSE：
+回归目标是 GAE 回报（第 9.1 节）：$\hat{R}_t = \hat{A}_t + V_{\theta_{old}}(s_t)$。未裁剪时为 MSE：
 
 $$
 L^{VF} = \mathbb{E}\Bigl[\bigl(V_\theta(s_t) - \hat{R}_t\bigr)^2\Bigr]
@@ -651,25 +671,3 @@ $$
 | `vf_coef` | 0.5 | 价值损失权重 |
 | `max_grad_norm` | 0.5 | 梯度裁剪阈值 |
 | `target_kl` | 不启用 | 估计 KL 超过该值则结束本批更新 |
-
----
-
-## 十四、直观理解
-
-策略梯度在当前策略采得的样本上，对 $\nabla_\theta\log\pi_\theta(a_t\mid s_t)$ 作加权平均，权重是优势 $\hat A_t\approx Q^\pi(s_t,a_t)-V^\pi(s_t)$。
-
-$\nabla_\theta\log\pi_\theta(a_t\mid s_t)$ 是参数空间中提高 $\log\pi_\theta(a_t\mid s_t)$、从而局部增大动作 $a_t$ 概率的方向。更新沿该方向与 $\hat A_t$ 的乘积前进。$\hat A_t>0$ 时乘数为正，方向不变，参数沿 $\nabla_\theta\log\pi_\theta$ 移动，$a_t$ 的概率上升。$\hat A_t<0$ 时乘数为负，方向反转，参数沿相反方向移动，$a_t$ 的概率下降。
-
-同一批数据上参数会离开采样时的 $\theta_{\mathrm{old}}$。未裁剪支路的梯度为
-
-$$
-r_t(\theta)\,\nabla_\theta\log\pi_\theta(a_t\mid s_t)\,\hat A_t,
-\qquad
-r_t(\theta)=\frac{\pi_\theta(a_t\mid s_t)}{\pi_{\theta_{\mathrm{old}}}(a_t\mid s_t)}.
-$$
-
-第一步 $r_t=1$，上式的期望即策略梯度。其后 $r_t$ 是重要性比：动作仍是旧策略抽出的，用它把目标改写成对新策略的估计。限制步长的是裁剪。$\hat A_t>0$ 且 $r_t>1+\epsilon$ 时，好动作的概率已超过旧策略的 $1+\epsilon$ 倍，$\min$ 取常数 $(1+\epsilon)\hat A_t$，梯度为零。$\hat A_t<0$ 且 $r_t<1-\epsilon$ 时，坏动作的概率已低于 $1-\epsilon$ 倍，同样停住。反向越界仍走 $r_t\hat A_t$，把比率拉回。
-
-$\log\pi_\theta(a\mid s)$ 与采集时写下的 $\log\pi_{\theta_{\mathrm{old}}}(a\mid s)$ 都是标量。连续动作下由对角高斯密度算出，$r_t$ 是二者之差的指数。$\nabla_\theta\log\pi_\theta$ 对全部参数取值，维数等于 $\theta$，由反向传播得到。
-
-`update_epochs` 用完后丢弃该批。下一批动作由更新后的 $\pi_\theta$ 重新采样。

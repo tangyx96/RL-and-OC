@@ -22,7 +22,7 @@ SAC 是 Haarnoja 等人于 2018 年提出的 off-policy Actor-Critic，在**最�
 
 ## 二、前置基础：最大熵强化学习
 
-### 熵正则与最大熵目标
+### 2.1 熵正则与最大熵目标
 
 标准 RL 最大化折扣期望回报：
 
@@ -36,7 +36,9 @@ $$
 J(\pi) = \mathbb{E}_{\tau \sim \pi}\left[\sum_{t=0}^{\infty} \gamma^t \Big(r(s_t, a_t) + \alpha\,\mathcal{H}\big(\pi(\cdot\mid s_t)\big)\Big)\right]
 $$
 
-其中 $\alpha>0$ 为温度。熵定义为
+其中 $\alpha>0$ 为温度。$\mathcal{H}\big(\pi(\cdot\mid s)\big)$ 分四点说明。
+
+（1）**定义。**
 
 $$
 \mathcal{H}\big(\pi(\cdot\mid s)\big)
@@ -44,21 +46,54 @@ $$
 = -\int \pi(a\mid s)\log\pi(a\mid s)\,da
 $$
 
-$\mathcal{H}(\pi(\cdot\mid s))$ 刻画 $\pi(\cdot\mid s)$ 的不确定性：在有限支撑上于均匀分布处取最大，于 Dirac 测度处趋于 $0$。由线性性质，$\alpha\mathcal{H}(\pi(\cdot\mid s))=\mathbb{E}_{a\sim\pi}[-\alpha\log\pi(a\mid s)]$，故目标函数与 soft 备份中的 $-\alpha\log\pi$ 为同一项。$\alpha$ 将熵与奖励置于同一量纲：$\alpha$ 增大则最优策略更接近均匀；$\alpha\to 0$ 时目标退化为不含熵的 $J(\pi)$。
+$-\log\pi(a\mid s)$ 是动作 $a$ 在 $\pi(\cdot\mid s)$ 下的自信息：密度越高，自信息越小。熵是该自信息在 $a\sim\pi(\cdot\mid s)$ 下的期望，即策略对其自身采样的平均不确定度。积分是同一期望的连续写法，权重为 $\pi(a\mid s)$，概率质量可忽略的动作不贡献熵。
 
-加入 $\mathcal{H}$ 改变的是最优策略的定义，而非仅在执行时附加探索噪声。给定 $Q$，逐步最大化上述 $J$ 得到 Boltzmann 策略 $\pi^*(a\mid s)\propto\exp(Q(s,a)/\alpha)$（见本节后文）；$\alpha$ 同时进入 soft Bellman 方程。其作用可陈述如下。
+（2）**取值。** 有限动作集上，$\mathcal{H}$ 在均匀分布处取最大值 $\log\lvert\mathcal{A}\rvert$，在确定性分布处为 $0$。连续动作的微分熵可以取负值：密度可以大于 $1$，$\log\pi$ 可以为正。比较时数值较大者更分散。
 
-1. **探索由目标规定。** 确定性 Actor（DDPG / TD3）依赖与 $Q$ 解耦的外加扰动。最大熵目标中 $\pi$ 为条件分布，$\mathcal{H}$ 出现在 $J(\pi)$ 中，故在期望回报相近时提高熵即提高目标。PPO 将熵作为 on-policy 损失中的附加正则；SAC 将同一结构写入价值备份。
+（3）**与 soft 项的关系。** 由线性性质，$\alpha\mathcal{H}(\pi(\cdot\mid s))=\mathbb{E}_{a\sim\pi}[-\alpha\log\pi(a\mid s)]$，故目标中的熵奖励与 soft 备份中的 $-\alpha\log\pi$ 是同一项。$\alpha$ 将二者置于同一尺度：$\alpha$ 增大则最优策略更接近均匀；$\alpha\to 0$ 时目标退化为不含熵的 $J(\pi)$。
 
-2. **等回报下的随机性偏好。** 若若干策略的期望回报相同，最大熵解选取其中熵较大者。$\pi^*$ 按 $Q$ 分配质量：$Q$ 较高的动作具有较大概率，$Q$ 接近的动作仍具有正质量，从而对奖励与转移核的小扰动较为稳健。
+（4）**对角高斯。** 连续策略常取 $\pi(\cdot\mid s)=\mathcal{N}\big(\mu(s),\mathrm{diag}(\sigma(s)^2)\big)$。一维时略去 $s$，
 
-3. **最优动作非唯一。** $Q(s,\cdot)$ 存在多个近最优点时，确定性策略只能取其中之一；有限 $\alpha$ 下 $\pi^*$ 可保持多峰。$Q$ 随后更新时，概率质量可在峰之间重新分配，而无须先坍缩为单点再迁移。
+$$
+\log\pi(a)=-\frac12\log(2\pi\sigma^2)-\frac{(a-\mu)^2}{2\sigma^2},
+$$
 
-4. **与 Actor–Critic 更新一致。** Soft 价值满足 $V^\pi(s)=\mathbb{E}_{a\sim\pi}[Q^\pi(s,a)-\alpha\log\pi(a\mid s)]$。Actor 最小化 $\mathbb{E}[\alpha\log\pi-Q]$ 等价于信息投影 $\mathrm{KL}\big(\pi(\cdot\mid s)\big\| e^{Q/\alpha}/Z(s)\big)$。将平均熵约束为 $\mathbb{E}[\mathcal{H}(\pi)]\ge\bar{\mathcal{H}}$ 时，$\alpha$ 为对偶变量（第七节）。
+故
+
+$$
+\begin{aligned}
+\mathcal{H}(\pi)
+&= \frac12\log(2\pi\sigma^2)+\frac{1}{2\sigma^2}\mathbb{E}\big[(a-\mu)^2\big] \\
+&= \frac12\log(2\pi\sigma^2)+\frac12 \\
+&= \frac12\log(2\pi e\,\sigma^2),
+\end{aligned}
+$$
+
+由 $\mathbb{E}[(a-\mu)^2]=\sigma^2$ 得第二式。均值在期望中消去，平移不改变熵；$\mathcal{H}$ 只随 $\log\sigma$ 增大。$\sigma\to 0$ 时 $\mathcal{H}\to-\infty$，$\mathcal{H}=0$ 对应 $\sigma=(2\pi e)^{-1/2}$。各维独立时联合对数密度为各维之和，熵随之相加：
+
+$$
+\mathcal{H}\big(\pi(\cdot\mid s)\big)
+=\sum_{i=1}^{d}\frac12\log\big(2\pi e\,\sigma_i(s)^2\big)
+=\frac{d}{2}\log(2\pi e)+\sum_{i=1}^{d}\log\sigma_i(s).
+$$
+
+右端第一项为常数。在该参数化下提高熵，即提高各维 $\log\sigma_i$。SAC 的环境动作经 $\tanh$ 压缩，进入目标的是变换后密度的 $-\log\pi(a\mid s)$，由采样估计，雅可比见第 6.4 节；上式是压缩前高斯的熵。
+
+### 2.2 加入熵的作用
+
+加入 $\mathcal{H}$ 改变的是最优策略的定义，而非仅在执行时附加探索噪声。给定 $Q$，逐步最大化上述 $J$ 得到 Boltzmann 策略 $\pi^*(a\mid s)\propto\exp(Q(s,a)/\alpha)$（见第 2.3 节 Step 3）；$\alpha$ 同时进入 soft Bellman 方程。其作用如下。
+
+（1）**探索由目标规定。** 确定性 Actor（DDPG / TD3）依赖与 $Q$ 解耦的外加扰动。最大熵目标中 $\pi$ 为条件分布，$\mathcal{H}$ 出现在 $J(\pi)$ 中，故在期望回报相近时提高熵即提高目标。PPO 将熵作为 on-policy 损失中的附加正则；SAC 将同一结构写入价值备份。
+
+（2）**等回报下的随机性偏好。** 若若干策略的期望回报相同，最大熵解选取其中熵较大者。$\pi^*$ 按 $Q$ 分配质量：$Q$ 较高的动作具有较大概率，$Q$ 接近的动作仍具有正质量，从而对奖励与转移核的小扰动较为稳健。
+
+（3）**最优动作非唯一。** $Q(s,\cdot)$ 存在多个近最优点时，确定性策略只能取其中之一；有限 $\alpha$ 下 $\pi^*$ 可保持多峰。$Q$ 随后更新时，概率质量可在峰之间重新分配，而无须先坍缩为单点再迁移。
+
+（4）**与 Actor–Critic 更新一致。** Soft 价值满足 $V^\pi(s)=\mathbb{E}_{a\sim\pi}[Q^\pi(s,a)-\alpha\log\pi(a\mid s)]$。Actor 最小化 $\mathbb{E}[\alpha\log\pi-Q]$ 等价于信息投影 $\mathrm{KL}\big(\pi(\cdot\mid s)\big\| e^{Q/\alpha}/Z(s)\big)$。将平均熵约束为 $\mathbb{E}[\mathcal{H}(\pi)]\ge\bar{\mathcal{H}}$ 时，$\alpha$ 为对偶变量（第七节）。
 
 **例。** 单状态、动作集 $\{L,R\}$。若 $r(L)=r(R)$，不含熵的目标对一切 $\pi$ 无差别，一阶方法常收敛到单纯形顶点；最大熵问题的解为均匀分布。若 $r(L)>r(R)$，则 $\pi^*(L)>\pi^*(R)>0$，而非 $\pi^*(L)=1$。
 
-### 最大熵目标下的软价值：逐步推导
+### 2.3 最大熵目标下的软价值：逐步推导
 
 **Step 1：$V^\pi$ 的一步展开**
 
@@ -209,7 +244,7 @@ SAC 保留双 $Q$ 与目标网络，把探索改成最大熵，并让 $\alpha$ �
 
 ### 5.1 从方程到可采样的 TD 目标
 
-第二节得到
+第 2.3 节得到
 
 $$
 Q(s,a) = r + \gamma\,\mathbb{E}_{s',a'}\big[Q(s',a') - \alpha\log\pi(a'\mid s')\big]
@@ -249,7 +284,7 @@ $\tau$ 很小（如 $0.005$）。
 
 ### 6.1 策略应靠近 Boltzmann
 
-给定当前 $Q_\theta$，理想策略是 $\exp(Q_\theta/\alpha)/Z$。Actor $\pi_\phi$ 做的是把当前分布拉向这个目标，即最小化正向 KL（与第二节 Step 3 同一信息投影）：
+给定当前 $Q_\theta$，理想策略是 $\exp(Q_\theta/\alpha)/Z$。Actor $\pi_\phi$ 做的是把当前分布拉向这个目标，即最小化正向 KL（与第 2.3 节 Step 3 同一信息投影）：
 
 $$
 J_\pi(\phi)
@@ -402,7 +437,7 @@ $$
 - 策略太确定：$\log\pi$ 偏大，$\log\pi+\bar{\mathcal{H}}>0$，最小化 $J$ 会**增大** $\alpha$，加强探索
 - 熵已经够高：$\log\pi+\bar{\mathcal{H}}<0$，**减小** $\alpha$，更贪心
 
-连续动作的常用启发式：$\bar{\mathcal{H}}=-\dim(\mathcal{A})$（与「各维独立、量级相当于标准差为 $1$ 的高斯」同阶）。离散动作常用均匀分布的熵再乘一个小于 $1$ 的系数，避免目标过高。
+连续动作常用 $\bar{\mathcal{H}}=-\dim(\mathcal{A})$。若熵来自未压缩的对角高斯，由第 2.1 节的一维闭式，各维熵为 $-1$ 时 $\sigma=(2\pi e^{3})^{-1/2}\approx 0.09$。离散动作常用均匀分布的熵再乘一个小于 $1$ 的系数，避免目标过高。
 
 ---
 
@@ -431,7 +466,9 @@ $$
 
 ---
 
-## 九、完整训练流程
+## 九、训练过程
+
+### 9.1 完整训练流程
 
 ```text
 1. 初始化 Actor、两套 Q 与目标 Q、经验池；可选地初始化 log α
@@ -446,6 +483,38 @@ $$
      e. 软更新目标网络 Q̄
 4. 回到步骤 2，数据保留在池中反复使用
 ```
+
+### 9.2 单次更新过程
+
+（1）**抽样。** 从经验池抽取一批 $(s,a,r,s',d)$。转移由以往的策略写入，本步之后仍留在池中。
+
+（2）**备份。** 使用步初的 $\phi$：在 $s'$ 上采样 $a'\sim\pi_\phi(\cdot\mid s')$，并计算 $\log\pi_\phi(a'\mid s')$。后继价值取两套目标网络 $Q_{\bar\theta_i}$ 的较小者，
+
+$$
+y = r + \gamma(1-d)\Big(\min_{i=1,2} Q_{\bar\theta_i}(s',a') - \alpha\log\pi_\phi(a'\mid s')\Big).
+$$
+
+$y$ 在 Critic 更新中保持不变。
+
+（3）**在线 $Q$。** $\theta_1,\theta_2$ 对同一 $y$ 做均方回归。
+
+（4）**策略。** 固定更新后的 $\theta$，最小化 $\mathrm{KL}\big(\pi_\phi(\cdot\mid s)\,\|\,\exp(Q_\theta(s,\cdot)/\alpha)/Z_\theta(s)\big)$，其中 $Q_\theta=\min_i Q_{\theta_i}$。$Z_\theta(s)$ 不含 $\phi$，等价损失为
+
+$$
+J_\pi(\phi)=\mathbb{E}\big[\alpha\log\pi_\phi(a\mid s)-\min_i Q_{\theta_i}(s,a)\big],
+$$
+
+$a=f_\phi(\varepsilon;s)$。梯度经 $a$ 回到 $\phi$。$Q$ 尚不稳定时，Actor 隔若干 Critic 步更新一次。
+
+（5）**温度与目标网络。** 若学习温度，沿 $J(\alpha)$ 更新 $\alpha$。随后
+
+$$
+\bar\theta_i \leftarrow \tau\theta_i + (1-\tau)\bar\theta_i.
+$$
+
+$\bar\theta$ 滞后于在线 $Q$，下一步备份仍接近更新前的价值。
+
+（6）**继续采样。** 此后的环境步，以及下一批备份中的 $a'$ 与 $\log\pi$，使用更新后的 $\phi$。
 
 ---
 

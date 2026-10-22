@@ -11,6 +11,6 @@
 | [`simulators/mjlab/`](simulators/mjlab/) | mjlab（[arXiv:2601.22074](https://arxiv.org/abs/2601.22074)）；应用层对照 [unitree_rl_mjlab](https://github.com/tangyx96/unitree_rl_mjlab) | [`mjlab-introduction.md`](simulators/mjlab/mjlab-introduction.md) |
 | [`simulators/rsl_rl/`](simulators/rsl_rl/) | RSL-RL（[arXiv:2509.10771](https://arxiv.org/abs/2509.10771)）；Isaac Lab / mjlab 的默认 on-policy 后端 | [`rsl-rl-introduction.md`](simulators/rsl_rl/rsl-rl-introduction.md) |
 
-Bertsekas 提供 Bellman / MPC / 策略梯度骨架；Zero-Order 用随机搜索统一 TO 与 RL；SQP 组用数值优化统一 iLQR、DDP 与结构利用型 QP；`policy-learning/` 分三组：在线强化学习（PPO、SAC，以及 HIL-SERL 的真机 SAC：人对半批次、离散夹爪、熵外价值备份）、生成式动作策略（Diffusion Policy、Flow Matching、VLA、WAM），以及接在两组之间的 DPPO 与 RL-100（DPPO 用 PPO 微调 Diffusion Policy；RL-100 把同一裁剪目标用于真机的离线与在线后训练，离线优势取 Q−V，行为策略经动力学评估后才替换，并可蒸馏为一步学生）；`simulators/` 按仿真器与训练库归档；其中 `mjlab/` 对应 GPU 并行仿真上的 manager-based 机器人 RL 环境，`rsl_rl/` 对应接到这些环境上的 on-policy 训练循环。
+Bertsekas 提供 Bellman / MPC / 策略梯度骨架；Zero-Order 用随机搜索统一 TO 与 RL；SQP 组用数值优化统一 iLQR、DDP 与结构利用型 QP；`policy-learning/` 分三组：在线强化学习（PPO 在一批上沿优势加权的对数概率走裁剪后的重要性比，用完即弃；SAC 把对角高斯的熵写入 soft Bellman，单次更新先备份再做 KL 投影；HIL-SERL 的真机 SAC 用人对半批次、离散夹爪和熵外价值备份）、生成式动作策略（Diffusion Policy、Flow Matching、VLA、WAM），以及接在两组之间的 DPPO 与 RL-100（DPPO 用 PPO 微调 Diffusion Policy；RL-100 把同一裁剪目标用于真机的离线与在线后训练，离线优势取 Q−V，行为策略经动力学评估后才替换，并可蒸馏为一步学生）；`simulators/` 按仿真器与训练库归档；其中 `mjlab/` 对应 GPU 并行仿真上的 manager-based 机器人 RL 环境，`rsl_rl/` 对应接到这些环境上的 on-policy 训练循环。
 
 版权在原书 / 原论文，仅供个人学习。

@@ -40,9 +40,9 @@ Bertsekas 在序言中将本书定位为：**在精确 DP 不可行时，通过�
 | **精确 → 近似** | 先 exact DP，再说明计算不可行性，再引入近似 | Ch.1 → Ch.2 起 |
 | **有限时域 → 无限时域** | 先有限阶段（分析简洁），再平稳 MDP 理论 | Ch.1–3 → Ch.4–5 |
 | **确定性 → 随机** | 确定性情形先行，且便于 rollout/MPC 阐述 | Ch.1 §1.1 先于 §1.2 |
-| **Model-based → Model-free** | 先基于 $p_{ij},f,g$ 的闭式期望，再引入 MC/仿真 | Ch.2 §2.1.3 vs §2.1.4；Ch.4 §4.7 |
+| **Model-based → Model-free** | 从显式调用 $p_{ij},f,g$ 转向只使用交互样本或仿真轨迹；Monte Carlo 是常见实现，不是定义本身 | Ch.2 §2.1.3 vs §2.1.4；Ch.4 §4.7 |
 
-**Model-free 的本书定义**：期望是否用 Monte Carlo 采样估计——与「是否存在数学模型」不完全等同（见 [`ch02`](ch02-approximation-in-value-space-study-notes.md) §2.1.3 后表格）。
+**Model-based / model-free 的区分**应以可访问的信息为准：显式使用转移概率、动力学方程或其可微模型属于 model-based；只通过交互样本或仿真轨迹估计目标而不调用显式转移模型，属于 model-free。确定性并不自动意味着 model-based，随机性也不自动意味着 model-free；同一确定性系统既可以由已知方程求解，也可以只通过黑箱仿真查询。
 
 ### 1.4 递进式引入新方法
 

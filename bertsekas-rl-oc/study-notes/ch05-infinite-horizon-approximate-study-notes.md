@@ -89,7 +89,7 @@ T_{\tilde\mu}(T^{\ell-1}\tilde J)=\min_u\sum_j p_{ij}(u)\big[g(i,u,j)+\alpha(T^{
 \|J_{\tilde\mu}-J^{*}\|_\infty\le\frac{2\alpha^\ell}{1-\alpha}\min_{\beta\in\mathbb{R}}\max_i\big|\tilde J(i)+\beta-J^{*}(i)\big|.
 ```
 
-**受限控集前瞻** (5.7)：在 $U(i)\subset U(i)$ 上 min 得 $\hat J(i)$；若
+**受限控集前瞻** (5.7)：在受限控集 $\tilde U(i)\subset U(i)$ 上 min 得 $\hat J(i)$；若
 
 ```math
 \hat J(i)\le\tilde J(i)+c,\quad\forall i,
@@ -370,7 +370,7 @@ $\hat J$ 可取上一策略评估、零、或问题近似——类似**乐观 PI
 **增量梯度**（Ch.3 (3.6) 型）：
 
 ```math
-r_{k+1}=r_k-\gamma_k\nabla_r\big(\tilde J(i^s_k,r_k)-\beta^{s_k}\big)^2.
+r_{k+1}=r_k-\eta_k\nabla_r\big(\tilde J(i^s_k,r_k)-\beta^{s_k}\big)^2.
 ```
 
 线性架构 → (5.22) 闭式解（Ch.3 (3.3)）。
@@ -529,7 +529,7 @@ Q^{*}(i,u)=\sum_j p_{ij}(u)\Big[g(i,u,j)+\alpha\min_{v\in U(j)}Q^{*}(j,v)\Big].
 **原始 Q-learning** (5.29)–(5.30)：采样 $(i_k,u_k)$，后继 $j_k\sim p_{i_k j}(u_k)$：
 
 ```math
-Q_{k+1}(i,u)=(1-\gamma_k)Q_k(i,u)+\gamma_k(F_k Q_k)(i,u),
+Q_{k+1}(i,u)=(1-\eta_k)Q_k(i,u)+\eta_k(F_k Q_k)(i,u),
 ```
 
 ```math
@@ -540,7 +540,7 @@ Q_k(i,u), & \text{否则}.
 \end{cases}
 ```
 
-收敛需：各 $(i,u)$ 无限次访问；$\gamma_k>0$，$\sum_k\gamma_k=\infty$，$\sum_k\gamma_k^2<\infty$（[Tsi94]）。
+收敛需：各 $(i,u)$ 无限次访问；$\eta_k>0$，$\sum_k\eta_k=\infty$，$\sum_k\eta_k^2<\infty$（[Tsi94]）。
 
 **实践困难**：$(i,u)$ 对数可能极大 → 需 Q 逼近。
 
@@ -561,14 +561,14 @@ q_k=\tilde Q(i_k,u_k,r_k)-\alpha\tilde Q(i_{k+1},u_{k+1},r_k)-g(i_k,u_k,i_{k+1})
 ```
 
 ```math
-r_{k+1}=r_k-\gamma_k\nabla_r\tilde Q(i_k,u_k,r_k)\,q_k.
+r_{k+1}=r_k-\eta_k\nabla_r\tilde Q(i_k,u_k,r_k)\,q_k.
 ```
 
 $q_k$ 为 **TD 残差**（§5.5）。
 
 **SARSA（on-policy）**：TD 目标用**实际**下一动作 $u_{k+1}$（上式含 $\tilde Q(i_{k+1},u_{k+1},r_k)$）。
 
-**Q-learning（off-policy 常见写法）**：目标用 $\min_v\tilde Q(j,v,r)$ 替代 $\tilde Q(j,u',r)$——与 SARSA 采样目标不同；收敛需 on-policy 或特殊 off-policy 修正。
+**Q-learning（off-policy）**：目标用 $\min_v\tilde Q(j,v,r)$ 替代 $\tilde Q(j,u',r)$——与 SARSA 的实际下一动作目标不同。表格情形下，在有限状态--动作空间、充分访问和标准随机近似步长条件下，行为策略可以不同于目标 greedy 策略；函数逼近时则不具有同样的一般收敛保证。
 
 **DQN** [GBC16]：$\tilde Q(i,u,\theta)$ 为深度网络；  
 - **经验回放**：缓冲存 $(i,u,g,j)$，随机 minibatch 打破时间相关；  
@@ -650,7 +650,7 @@ $k=q$ 时与 LSTD(0) 工作量相当；**热启动**下一策略评估。
 **TD(0)** (5.56)：
 
 ```math
-r_{k+1}=r_k-\gamma_k\phi(i_k)d_k(r_k).
+r_{k+1}=r_k-\eta_k\phi(i_k)d_k(r_k).
 ```
 
 单样本、无矩阵求逆；通常慢于 LSPE/LSTD。
@@ -744,7 +744,7 @@ Fig 5.7.2：每个 $r$ 定策略与代价曲面。
 **梯度法** (5.61)（$i_0$ 已知）：
 
 ```math
-r_{k+1}=r_k-\gamma_k\nabla_r J_{\tilde\mu(r_k)}(i_0).
+r_{k+1}=r_k-\eta_k\nabla_r J_{\tilde\mu(r_k)}(i_0).
 ```
 
 随机问题：梯度需 MC 估计 → 噪声大。
@@ -752,7 +752,7 @@ r_{k+1}=r_k-\gamma_k\nabla_r J_{\tilde\mu(r_k)}(i_0).
 **随机化策略 + log-likelihood trick**：轨迹 $z=\{i_0,u_0,i_1,\ldots\}$，$F(z)=\sum_m\alpha^m g(i_m,u_m,i_{m+1})$。样本梯度迭代 (5.67)：
 
 ```math
-r_{k+1}=r_k-\gamma_k\nabla_r\log p(z^k;r_k)\,F(z^k).
+r_{k+1}=r_k-\eta_k\nabla_r\log p(z^k;r_k)\,F(z^k).
 ```
 
 **折扣 DP 例 5.7.6**：(5.69)
@@ -821,7 +821,7 @@ $\tilde\mu(\cdot,r)$ 作新基策略 → 迭代。Rollout = “专家”。
 **极端乐观增量**（类 SARSA）：每得 $(i_k,u_k)$（$u_k$ 为 rollout 控）：
 
 ```math
-r_{k+1}=r_k-\gamma_k\nabla_r\tilde\mu(i_k,r_k)\big(\tilde\mu(i_k,r_k)-u_k\big).
+r_{k+1}=r_k-\eta_k\nabla_r\tilde\mu(i_k,r_k)\big(\tilde\mu(i_k,r_k)-u_k\big).
 ```
 
 离线 PI 计算重；最终策略在线可作 rollout 基策略。**探索**：$i^s$ 选择仍关键。

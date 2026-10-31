@@ -226,7 +226,7 @@ Logger 默认 TensorBoard。W&B / Neptune 在 runner 配置的 `logger` 字典�
 
 `PPO.act` 用当前 actor 随机采样动作，同时记下 log-prob、分布参数、critic 价值与（若有）RNN 隐状态。`process_env_step` 更新观测归一化，写入 reward / done，并处理超时与 RND。`compute_returns` 反序算 GAE。`update` 在新策略上重算 log-prob，做 PPO 裁剪更新。
 
-与 [`ppo_notes.md`](../../policy-learning/ppo_notes.md) 中的目标一致。实现上需单独记住下列机器人场景中的处理。
+该目标与 [`ppo_notes.md`](../../policy-learning/ppo_notes.md) 中的推导一致。机器人任务的实现还包括以下处理。
 
 ### 5.2 超时自举
 
@@ -416,7 +416,7 @@ PPO
 - **把 timeout 写进失败 `done` 且不设 `time_outs`。** 截断被当成终止，GAE 少一段 bootstrap。
 - **actor 的 `obs_groups` 含特权项。** 训练能涨分，导出后实机没有这些通道。
 - **导出后按错拼接顺序。** JIT / ONNX 吃的是拼接向量，顺序必须与 actor 的 group 列表一致。
-- **评估时仍 `stochastic_output=True`。** `get_inference_policy()` 默认确定性；自己调 `forward` 时不要把训练采样旗标留下。
+- **评估时仍设置 `stochastic_output=True`。** `get_inference_policy()` 默认采用确定性输出；直接调用 `forward` 时应关闭训练阶段的随机采样选项。
 - **在 RNN 策略上开 Symmetry。** 库会直接报错。
 - **把 `num_envs` 写进 runner YAML。** 并行度是环境属性；改它不会让已构造的 `VecEnv` 变大。
 

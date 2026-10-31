@@ -6,7 +6,7 @@
 
 ---
 
-## 章首：为何近似、两大路线与实现维度
+## 章首：近似的动机、两条路线与实现维度
 
 ### 动机
 
@@ -74,23 +74,24 @@ r_k \in \arg\min_r \sum_{s=1}^q \big\| u_k^s - \mu_k(x_k^s,r) \big\|^2. \qquad \
 
 > **跨章索引**：值/策略范式、VI/PI 算法模板、精确与参数化表示，及全书章节结构，见 [`00-algorithm-taxonomy.md`](00-algorithm-taxonomy.md)。本章定名两大 paradigm；精确 VI/PI 见 Ch.4 §4.4–4.5——建议在 §4.5 读毕后对照该文 §4–6。
 
-### Model-based 与 Model-free（本书界定）
+### Model-based 与 Model-free
 
-本书以**期望是否用 Monte Carlo 采样**区分，而非单纯「有没有 $f,g$ 的公式」：
+本文按求解时使用的信息接口区分两者，而不以期望是否采用 Monte Carlo 估计作为定义：
 
 | 类型 | 含义 |
 |------|------|
-| **Model-based** | 对任意 $(x_k,u_k,w_k)$，$p_k(w_k\mid x_k,u_k)$ 及 $f_k,g_k$ **闭式可用**；(2.1) 等式中的 $\mathbb{E}[\cdot]$ 用**代数/求和/积分**算，不用 MC。 |
-| **Model-free** | (2.1) 及相关式中的期望用 **Monte Carlo 模拟**估计。两种情形：(1) **无** $p_k$ 的数学模型，只有模拟器——给定 $(x_k,u_k)$ 可采样下一态 $x_{k+1}$ 与代价；(2) **有** $p_k$，但为效率仍选采样——仍算 model-free。 |
+| **Model-based** | 求解过程显式调用转移概率、动力学方程或其可计算模型，例如 $p_k(w_k\mid x_k,u_k)$、$f_k$ 和 $g_k$。期望可以用求和、积分或 Monte Carlo 估计。 |
+| **Model-free** | 求解过程只使用交互样本或仿真轨迹估计 Bellman 目标、回报或梯度，不调用显式的转移模型。 |
 
-**小结**：采样/MC 是本书划分 model-based / model-free 的**决定性属性**。Model-free 方法**有模型时也可用**，以免「有模型却故意采样」产生术语歧义。
+因此，已知模型时也可以采用 Monte Carlo 作为数值实现，此时仍属于 model-based 问题上的采样估计；反之，黑箱模拟器即使描述的是确定性系统，也可以按 model-free 方式使用。
 
-**与确定性的关系**：确定性问题无期望，通常归 **model-based**（即使 $f_k,g_k$ 靠 heavy 仿真算）。但确定性问题仍可能大量用 MC——如国际象棋/围棋完全确定，AlphaGo/AlphaZero 仍靠 MCTS 与随机化策略（§2.4.2）；第 4 章部分策略梯度同理。
+**与确定性的关系**：确定性与 model-based/model-free 是两个独立维度。已知 $f_k,g_k$ 并直接使用其计算属于 model-based；只通过黑箱仿真查询，即使系统确定，也可按 model-free 处理。国际象棋和围棋的环境动力学是确定的，但 AlphaGo/AlphaZero 仍使用 MCTS 与随机化采样（§2.4.2）；第 4 章的部分策略梯度方法也具有类似区分。
 
 **与前述要点的衔接**：
 
-- (2.1) 的 $\mathbb{E}[\cdot]$ → model-based 代数 vs model-free 采样（§2.1.3 vs §2.1.4）。  
-- $\tilde J$ vs 直接 $\tilde Q$ → 值空间两条路；Q 回归天然偏 model-free。  
+- (2.1) 的 $\mathbb{E}[\cdot]$ 可以用代数求和、数值积分或 Monte Carlo 估计；这是实现方式，不单独决定 model-based/model-free。
+- 是否显式使用 $p_k,f_k,g_k$ 决定信息接口；§2.1.3 与 §2.1.4 分别讨论模型计算和样本估计。
+- $\tilde J$ vs 直接 $\tilde Q$ → 值空间两条路；Q 回归既可基于显式模型，也可基于样本。
 - 策略回归 (2.8) → 在 (a) 用 model-based 或 model-free 算 $\tilde\mu_k$ 后，把结果压进 $\mu_k(x,r)$。
 
 Fig. 2.1.1 概括值空间一步前瞻中 $\tilde J_{k+1}$ 的构造方式，以及 $u_k$ 的 min、$\mathbb{E}_{w_k}$ 的近似选项。
@@ -205,7 +206,7 @@ Q_k(x_k,u_k) = \mathbb{E}\big\{ g_k(x_k,u_k,w_k) + \tilde J_{k+1}(f_k(x_k,u_k,w_
 
 **要点**：
 
-- **Model-free 体现在 MC**：生成 (2.5) 与 (2.6) 时不必显式调用 $f_k,p_k$；执行 (2.7) 只需 $\tilde Q$ 架构。  
+- **样本型实现**：生成 (2.5) 与 (2.6) 时不必显式调用 $f_k,p_k$；执行 (2.7) 只需 $\tilde Q$ 架构。若显式模型用于产生或校验这些样本，则仍属于 model-based 的采样实现。
 - **双重近似**：$\tilde J_{k+1}$ 与 $\tilde Q_k$ 误差独立；(2.7) 一般**不等于**对 (2.2) 直接 min——为免建模付出的代价。  
 - **与 J 路径关系**：仍属**值空间**——先 $\tilde J$ 定 tail，再 $\tilde Q$ 做选控；也可跳过显式 $\tilde J$ 直接学 $\tilde Q$（RL 文献常见）。  
 - 架构与训练细节见第 3 章。
@@ -282,7 +283,7 @@ u_k^s \in \arg\min_u \mathbb{E}\big\{ g_k(x_k^s,u,w_k) + \tilde J_{k+1}(f_k(x_k^
 
 无限时域：常取平稳 $\tilde J_k\equiv\tilde J$，得平稳策略。折扣问题可 (i) 长 $\ell$ + 终端 0；或 (ii) 短 $\ell$ + 好的终端 $\tilde J$ 补偿（第 4 章）。
 
-#### 为何 $\ell$ 越大，对 $\tilde J_{k+\ell}$ 的要求越低
+#### 视界长度与 $\tilde J_{k+\ell}$ 的精度要求
 
 有效 cost-to-go 近似可拆成**两分量**（书中核心直觉）：
 
@@ -293,7 +294,7 @@ u_k^s \in \arg\min_u \mathbb{E}\big\{ g_k(x_k^s,u,w_k) + \tilde J_{k+1}(f_k(x_k^
 
 总近似 ≈ (a) + (b)。$(\ell-1)$ 段是精确算的，只要 **(b) 相对 (a) 可忽略**，整体就较准——$\ell$ 足够大时，精确优化覆盖的步数多，终端权重自然下降，故**粗 $\tilde J_{k+\ell}$（甚至 $\equiv 0$）有时够用**。
 
-#### 为何「$\ell$ 越大越好」**不总成立**
+#### 视界长度的权衡
 
 直觉上 $\ell\uparrow$ → 更多精确优化 → 策略应更好；但策略对 **$k+\ell$ 之后** 的状态是「盲」的——只看 $\tilde J_{k+\ell}$ 对远期**特别有利或不利**态的编码，**不**做精确前瞻。若 $\tilde J_{k+\ell}$ 很差或过于简化（如恒 0），更长 $\ell$ 反而把决策绑在**错误的终端信息**上。
 
@@ -479,7 +480,7 @@ u_k^s \in \arg\min_u \mathbb{E}\big\{ g_k(x_k^s,u,w_k) + \tilde J_{k+1}(f_k(x_k^
 **变体 B：离线策略（(2.19)）**  
 对**整问题**用 DP 解确定性策略 $\mu_k^d(x_k)$，在线 $\tilde\mu_k=\mu_k^d(x_k)$。
 
-两变体**性能等价**；A 适再规划/参数时变，B 适离线表查。
+在确定性、模型和参数均固定且两者都精确求解时，两变体产生相同的反馈决策；若模型或参数随时间、观测或场景变化，在线再规划 A 与离线策略 B 的性能不再自动等价。A 适合再规划和时变参数，B 适合离线表查。
 
 **部分状态信息**：$x_k$ 未知时用估计 $\hat x_k$ **当作**真状态代入 (2.18)/(2.19)（与部分 CEC 衔接）。
 
@@ -558,7 +559,7 @@ $C_s$ = 情景 $s$ 下从 $x_{k+1}$ 起最优或启发式 tail 代价；$r=(r_1,
 
 $H_{k+1}(x_{k+1})$ 为从 $x_{k+1}$ 起的启发式总代价（不含首项 $g_k$）。
 
-**例 2.4.1（TSP + 最近邻）**：状态为部分回路；对每个候选下一城市，用最近邻补全回路得 $H_{k+1}$，选最优扩展（Fig. 2.4.3）。读者可验证：**最近邻启发式是序贯一致的**（见下）。
+**例 2.4.1（TSP + 最近邻）**：状态为部分回路；对每个候选下一城市，用最近邻补全回路得 $H_{k+1}$，选最优扩展（Fig. 2.4.3）。最近邻启发式满足下述序贯一致性。
 
 ---
 
@@ -596,10 +597,10 @@ $H_{k+1}(x_{k+1})$ 为从 $x_{k+1}$ 起的启发式总代价（不含首项 $g_k
 设 $J_{k,\tilde\pi}$ 为 rollout 策略从 $(k,x_k)$ 起的代价，$\hat J_k=H_k$ 为启发式总代价。基步 $k=N$：$J_{N,\tilde\pi}=g_N=H_N$。归纳步：对任意 $x_k$，记 $\tilde u_k=\tilde\mu_k(x_k)$，
 
 ```math
-J_{k,\tilde\pi}(x_k)=g_k(x_k,\tilde u_k)+J_{k+1,\tilde\pi}(f_k(x_k,\tilde u_k)) \le g_k(x_k,\tilde u_k)+H_{k+1}(f_k(x_k,\tilde u_k)) =\min_u[g_k+H_{k+1}(f_k)] \le g_k(x_k,u_k^{\text{heur}})+H_{k+1}(f_k(x_k,u_k^{\text{heur}}))=H_k(x_k),
+J_{k,\tilde\pi}(x_k)=g_k(x_k,\tilde u_k)+J_{k+1,\tilde\pi}(f_k(x_k,\tilde u_k)) \le g_k(x_k,\tilde u_k)+H_{k+1}(f_k(x_k,\tilde u_k)) =\min_u[g_k+H_{k+1}(f_k)] \le H_k(x_k),
 ```
 
-其中 $u_k^{\text{heur}}$ 为启发式在 $x_k$ 的首控；最后一步等式需**序贯一致**（$H_k$ 满足策略 $\bar\pi$ 的 DP 方程）。
+其中 $H_k$ 是启发式总代价。若启发式序贯一致，$H_k$ 满足策略 $\bar\pi$ 的 DP 方程，上式最后一个不等式取等号；仅有序贯改进时，直接使用条件 (2.29) 即可。
 
 ---
 

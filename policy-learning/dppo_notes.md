@@ -2,6 +2,7 @@
 
 下文对应 Ren et al., *Diffusion Policy Policy Optimization*（[arXiv:2409.00588](https://arxiv.org/pdf/2409.00588)）。实现见 [irom-princeton/dppo](https://github.com/irom-princeton/dppo)：去噪步的高斯密度在 `model/diffusion/diffusion_vpg.py`，PPO 损失在 `model/diffusion/diffusion_ppo.py`，采样与 GAE 在 `agent/finetune/train_ppo_diffusion_agent.py`。  
 去噪过程与 $\epsilon$-prediction 见 [`diffusion_policy_notes.md`](diffusion_policy_notes.md)；裁剪目标与 GAE 见 [`ppo_notes.md`](ppo_notes.md)。
+从 KL 正则化的理想策略改进、score tilting 与投影角度理解 DPPO 和其他 diffusion-RL 路线，见 [`distribution-space-policy-optimization.md`](distribution-space-policy-optimization.md)。
 
 ---
 
@@ -211,7 +212,7 @@ $$
 
 倒序只沿 $t$。终止步的自举项乘 $1-\mathrm{terminated}$。价值回归的目标是 $R_t=A_t+V(\mathbf{s}_t)$，与 CleanRL 一致。
 
-论文比较过三种优势：只依赖 $\mathbf{s}_t$、依赖 $(\mathbf{s}_t,\mathbf{a}^{1})$、以及 $Q(\mathbf{s}_t,\mathbf{a}^{0})$。Hopper 上后两种在微调中奖励更高；Can、Square 和更长的操作任务上，只读观测更稳。动作序列维数高，扩散采样又随机，让价值函数记住某个动作的值更难。$Q$ 的误差会直接改噪声网络，稀疏奖励下成功率容易从预训练水平掉下去。
+论文比较了三种优势估计：仅依赖 $\mathbf{s}_t$、依赖 $(\mathbf{s}_t,\mathbf{a}^{1})$，以及 $Q(\mathbf{s}_t,\mathbf{a}^{0})$。Hopper 上后两种在微调中奖励更高；Can、Square 和更长的操作任务上，仅使用观测的估计更稳定。高维动作序列和扩散采样随机性增加了动作条件价值函数的估计难度。$Q$ 的误差会直接影响噪声网络更新，在稀疏奖励下可能使成功率低于预训练策略。
 
 ### 5.2 去噪步上的优势权重
 

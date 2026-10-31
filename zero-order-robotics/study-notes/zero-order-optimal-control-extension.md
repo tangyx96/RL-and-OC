@@ -4,7 +4,7 @@
 
 ## 摘要
 
-零阶最优控制更新的是玻尔兹曼目标 $p^*\propto\exp(-J/\lambda)$，或带当前高斯先验的 $p_q\propto q\exp(-J/\lambda)$。MPPI 的均值步等于 log-sum-exp 的自然梯度步 $-\Sigma\nabla J_{\Sigma,\lambda}/\lambda$，也等于平滑密度上的预条件漂移 $\Sigma\nabla\log p_\sigma$。其余算法的差别只有三处：是否更新 $\Sigma$，协方差绕 $\boldsymbol{\mu}_{k+1}$ 还是 $\boldsymbol{\mu}_k$，以及是否保留扩散项。
+零阶最优控制可以用玻尔兹曼目标 $p^*\propto\exp(-J/\lambda)$，或带当前高斯先验的 $p_q\propto q\exp(-J/\lambda)$ 来组织。MPPI 的均值步既可写成 log-sum-exp 目标的自然梯度步 $-\Sigma\nabla J_{\Sigma,\lambda}/\lambda$，也可写成平滑密度上的预条件漂移 $\Sigma\nabla\log p_\sigma$。在本文讨论的高斯采样更新中，算法还因权重函数、是否更新协方差、协方差的中心、是否保留扩散噪声以及是否维护相互作用粒子而异；这些选择分别对应 MPPI、CEM、简化的 CMA-ES、Langevin 方法与 SVGD 等不同实现。
 
 ## 1. 基础：随机预测采样与高斯平滑
 
@@ -204,7 +204,7 @@ $\lambda$ 小时 $w_i$ 集中于少数低代价样本。$\rho\%$ 截断则在固
 
 ### 2.3 三条开关
 
-各算法共用这一目标，按下表选择权重、协方差和扩散项。协方差更新时，中心是 $\boldsymbol{\mu}_{k+1}$ 或采样时的 $\boldsymbol{\mu}_k$。扩散项为 $\sqrt{2}\,\Sigma^{1/2}\mathbf{z}$；也可以丢掉它，或只按日程缩小 $\Sigma$。
+下表在共同的采样分布视角下比较这些方法。它们并非严格求解同一个有限样本目标：权重可能来自指数效用、精英截断、排序效用或目标 score；SVGD 还含粒子间排斥。协方差更新时，中心可以是 $\boldsymbol{\mu}_{k+1}$ 或采样时的 $\boldsymbol{\mu}_k$。扩散项写成 $\sqrt{2}\,\Sigma^{1/2}\mathbf{z}$；确定性搜索会将其省略，退火方法还会按日程改变 $\Sigma$。
 
 | 方法 | 权重 | $\Sigma$ | 扩散项 |
 |------|------|----------|--------|

@@ -7,7 +7,7 @@
 
 ## 一、算法定位
 
-PPO 是 John Schulman 等人于 2017 年提出的策略梯度方法，是当前最主流的深度强化学习算法之一，也是 OpenAI 的默认 RL 算法，被用于 ChatGPT 的 RLHF 训练中。
+PPO 是 John Schulman 等人于 2017 年提出的策略梯度方法，长期是深度强化学习中的代表性基线，也曾用于 InstructGPT 的 RLHF 训练。具体系统是否采用 PPO 取决于训练阶段与实现版本，不能由这一公开实例推及所有后续模型。
 
 | 特性 | DQN | PPO |
 |------|-----|-----|
@@ -155,11 +155,13 @@ $$
 - **$k<t$**：到达 $s_t$ 时 $r_k$ 已确定，故 $\mathbb{E}[\nabla\log\pi\cdot r_k\mid s_t]=r_k\cdot\mathbb{E}[\nabla\log\pi\mid s_t]=r_k\cdot 0=0$，再取外层期望仍为 0。
 - **$k\ge t$**：$r_k$ 还取决于 $a_t$，不能提出去，这才是真正的信号。
 
-因此内层只留下 $k\ge t$。令 $G_t=\sum_{t'=t}^{T}\gamma^{t'-t}r_{t'}$（严格说前面还有 $\gamma^t$，实现里常省掉）：
+因此内层只留下 $k\ge t$。令 $G_t=\sum_{t'=t}^{T}\gamma^{t'-t}r_{t'}$，则对上述折扣回报目标有
 
 $$
-\nabla_\theta J(\theta)=\mathbb{E}\left[\sum_{t=0}^{T}\nabla_\theta\log\pi_\theta(a_t|s_t)\cdot G_t\right]
+\nabla_\theta J(\theta)=\mathbb{E}\left[\sum_{t=0}^{T}\gamma^t\nabla_\theta\log\pi_\theta(a_t|s_t)\cdot G_t\right].
 $$
+
+$\gamma^t$ 随 $t$ 变化，不能作为统一常数吸收到学习率。许多 PPO 实现对采样到的时间步等权平均，不显式乘 $\gamma^t$；这对应实践中的代理目标或未折扣状态访问分布，而不是上式所定义折扣目标的逐项无偏估计。下文推导若采用严格折扣目标，均应保留 $\gamma^t$；描述常见实现时则单独说明等权采样约定。
 
 过去奖励对所有 $a_t$ 都一样，只加噪声；砍掉后期望不变、方差变小。这和 Step 6 的 baseline 是同一条恒等式。
 
@@ -187,48 +189,54 @@ $$
 
 残差相对该状态平均水平，方差比 $G_t$ 或 $Q$ 小。
 
-取 $f(s,a)=\nabla_\theta\log\pi_\theta(a|s)\,A^\pi(s,a)$，真正的梯度是「一条轨迹上对 $t$ **求和**，再对轨迹平均」：
+取 $f(s,a)=\nabla_\theta\log\pi_\theta(a|s)\,A^\pi(s,a)$。对折扣目标，梯度是「一条轨迹上按 $\gamma^t$ 加权求和，再对轨迹平均」：
 
 $$
 \nabla_\theta J(\theta)
-=\mathbb{E}_\tau\left[\sum_{t=0}^{T}f(s_t,a_t)\right]
-=\sum_{t=0}^{T}\mathbb{E}\big[f(s_t,a_t)\big]
+=\mathbb{E}_\tau\left[\sum_{t=0}^{T}\gamma^t f(s_t,a_t)\right]
+=\sum_{t=0}^{T}\gamma^t\mathbb{E}\big[f(s_t,a_t)\big].
 $$
 
-占用测度 $d^\pi$ 是各时刻分布的等权平均（等价于先均匀抽 $t\in\{0,\ldots,T\}$，再抽 $(s_t,a_t)$）：
+有限时域的归一化折扣占用测度为
 
 $$
-d^\pi(s,a)=\frac{1}{T+1}\sum_{t=0}^{T}P(s_t=s,\,a_t=a)
+d_{\gamma,T}^\pi(s,a)
+=\frac{1}{C_T}\sum_{t=0}^{T}\gamma^tP(s_t=s,\,a_t=a),
+\qquad
+C_T=\sum_{t=0}^{T}\gamma^t.
 $$
 
 代入期望定义：
 
 $$
 \begin{aligned}
-\mathbb{E}_{(s,a)\sim d^\pi}[f]
-&=\sum_{s,a}d^\pi(s,a)\,f(s,a)\\
-&=\sum_{s,a}\left(\frac{1}{T+1}\sum_{t=0}^{T}P(s_t=s,a_t=a)\right)f(s,a)\\
-&=\frac{1}{T+1}\sum_{t=0}^{T}\underbrace{\sum_{s,a}P(s_t=s,a_t=a)\,f(s,a)}_{=\mathbb{E}[f(s_t,a_t)]}\\
-&=\frac{1}{T+1}\sum_{t=0}^{T}\mathbb{E}[f(s_t,a_t)]
+\mathbb{E}_{(s,a)\sim d_{\gamma,T}^\pi}[f]
+&=\frac{1}{C_T}\sum_{t=0}^{T}\gamma^t\mathbb{E}[f(s_t,a_t)].
 \end{aligned}
 $$
 
-故 $\sum_{t=0}^{T}\mathbb{E}[f(s_t,a_t)]=(T+1)\,\mathbb{E}_{d^\pi}[f]$。$\theta\leftarrow\theta+\alpha g$ 里 $T+1$ 可并入 $\alpha$，故
+故 $\sum_t\gamma^t\mathbb{E}[f(s_t,a_t)]=C_T\mathbb{E}_{d_{\gamma,T}^\pi}[f]$。$C_T$ 与 $\theta$ 无关，可并入学习率，故
 
 $$
-\nabla_\theta J(\theta)\propto\mathbb{E}_{(s,a)\sim d^\pi}\big[\nabla_\theta\log\pi_\theta(a|s)\,A^\pi(s,a)\big]
+\nabla_\theta J(\theta)\propto\mathbb{E}_{(s,a)\sim d_{\gamma,T}^\pi}\big[\nabla_\theta\log\pi_\theta(a|s)\,A^\pi(s,a)\big].
 $$
 
-代码把所有时间步放进同一 batch 做 `mean`，就是对 $d^\pi$ 的蒙特卡洛（$N=$ 轨迹数 $\times$ 步数）：
+令 $T\to\infty$ 可得常用定义 $d_\gamma^\pi(s,a)=(1-\gamma)\sum_{t\ge0}\gamma^tP(s_t=s,a_t=a)$。若改用各时刻等权的经验分布，则应将所得更新称为 PPO 的采样代理，而不再与上述折扣占用测度混写。
+
+常见代码把 rollout 中所有时间步放进同一 batch 做 `mean`。这相当于对该批次诱导的等权经验分布 $\hat d_{\mathrm{rollout}}$ 做蒙特卡洛平均，而不是显式按 $d_{\gamma,T}^\pi$ 的 $\gamma^t$ 加权：
 
 $$
 \frac{1}{N}\sum_{i=1}^{N}\nabla_\theta\log\pi_\theta(a^{(i)}|s^{(i)})\,\hat A^{(i)}
 $$
 
-框里的 $\mathbb{E}$ 指这个平均，不是再对 $t$ 求和；下标 $t$ 只表示 buffer 里的某一对 $(s,a)$：
+实现中的期望指这个经验平均，下标 $t$ 只表示 buffer 里的一对 $(s_t,a_t)$。因此更准确的写法是 PPO 所用的样本梯度代理
 
 $$
-\boxed{\nabla_\theta J(\theta)=\mathbb{E}\left[\nabla_\theta\log\pi_\theta(a_t|s_t)\cdot\hat A_t\right]}
+\boxed{
+g_{\mathrm{PPO}}
+=\mathbb{E}_{(s_t,a_t)\sim\hat d_{\mathrm{rollout}}}
+\left[\nabla_\theta\log\pi_\theta(a_t|s_t)\,\hat A_t\right]
+}
 $$
 
 **推导链总结**：
@@ -249,7 +257,7 @@ J(θ) = E[R(τ)]
 
 ---
 
-## 三、痛点：为什么普通策略梯度不够好
+## 三、普通策略梯度的数值局限
 
 1. **步长敏感**：学习率稍大，策略一步跨太远直接崩溃，且无法恢复（on-policy 数据已失效）
 2. **数据利用率低**：每次更新后，之前收集的数据"过期"，必须重新收集
@@ -292,20 +300,20 @@ $$
 **情况 A：$\hat{A}_t > 0$（好动作，想增大概率）**
 
 - $r_t \leq 1+\epsilon$：正常更新，梯度正常
-- $r_t > 1+\epsilon$：被裁剪，梯度为 0，停止更新
+- $r_t > 1+\epsilon$：对该样本，裁剪分支成为常数，该分支的梯度为 0
 
-> 效果：好的动作概率最多增大到原来的 $(1+\epsilon)$ 倍，之后不再奖励。
+> 效果：当该样本的比率越过 $1+\epsilon$ 后，继续增大比率不再提高它对裁剪代理目标的贡献。
 
 **情况 B：$\hat{A}_t < 0$（坏动作，想减小概率）**
 
 - $r_t \geq 1-\epsilon$：正常更新，梯度正常
-- $r_t < 1-\epsilon$：被裁剪，梯度为 0，停止更新
+- $r_t < 1-\epsilon$：对该样本，裁剪分支成为常数，该分支的梯度为 0
 
-> 效果：坏的动作概率最多减小到原来的 $(1-\epsilon)$ 倍，之后不再惩罚。
+> 效果：当该样本的比率越过 $1-\epsilon$ 后，继续减小比率不再提高它对裁剪代理目标的贡献。
 
 ### 5.4 小结
 
-裁剪只限制朝有利方向走得过远：$\hat A_t>0$ 时 $r_t$ 不得超过 $1+\epsilon$，$\hat A_t<0$ 时不得低于 $1-\epsilon$。反向越界不截断。这给出策略更新的单侧软约束，替代 TRPO 的 KL 信赖域。
+裁剪只截平朝有利方向走得过远时的样本目标：$\hat A_t>0$ 时截平 $r_t>1+\epsilon$ 的收益，$\hat A_t<0$ 时截平 $r_t<1-\epsilon$ 的收益；反向越界不截平。它不是对 $r_t$ 或 KL 的硬约束：共享参数受到其他样本和后续 minibatch 的更新后，某个样本的比率仍可落在区间之外。PPO 以这一单侧代理替代 TRPO 的显式 KL 约束。
 
 ---
 
@@ -476,11 +484,20 @@ $\lambda$ 不是再乘一个折扣，而是在「信模型 $V$」与「信轨迹
 
 | | $V$ 准确 | $V$ 不准 |
 |--|--|--|
-| **任意 $\lambda$** | $\mathbb{E}[\delta_{t+\ell} \mid s_t, a_t] = 0\ (\ell \ge 1)$，GAE 对 $A^\pi$ **无偏** | 后面的 $\delta$ 带着真实奖励，能纠正错误的 $V$ |
+| **任意 $\lambda$** | 精确 $V^\pi$、on-policy 转移和正确终止处理下，未来残差对当前历史的条件均值为零，故 GAE 对 $A^\pi$ 无偏 | 后面的 $\delta$ 带着真实奖励，可减弱错误 bootstrap 的影响，但不能一般地消除函数逼近偏差 |
 | **$\lambda$ 小** | 少用未来噪声，方差小 | 更依赖当前 $V$，偏差大 |
 | **$\lambda$ 大** | 许多随机 $\delta$ 相加，方差大 | 更接近真实回报，偏差小 |
 
 与 PPO 的衔接：正的 $\hat{A}_t$ 提高 $\pi(a_t \mid s_t)$，负的则压低。$\delta_t$ 给出每一步的局部评价；GAE 把未来残差按 $\gamma\lambda$ 折进来，得到比纯 TD(0) 更稳、比纯 Monte Carlo 噪声更小的优势估计。
+
+上表第一格可由过滤信息严格说明。令 $\mathcal F_{t+\ell}$ 表示在时刻 $t+\ell$ 选择动作之前的历史。若 $V=V^\pi$ 且后续动作按 $\pi$ 采样，则
+
+$$
+\mathbb E[\delta_{t+\ell}\mid\mathcal F_{t+\ell}]=0,
+\qquad \ell\ge1.
+$$
+
+再对给定 $(s_t,a_t)$ 使用迭代期望，即得 $\mathbb E[\delta_{t+\ell}\mid s_t,a_t]=0$。实践中 $V_\phi\ne V^\pi$，且 rollout 有限，GAE 因而仍是带偏差的优势估计；$\lambda$ 调节的是这种近似误差与采样方差之间的权衡。
 
 ---
 
@@ -629,7 +646,7 @@ $$
 
 ---
 
-## 十一、PPO 成功的关键设计
+## 十一、PPO 的主要组成
 
 | 设计 | 解决的问题 | 实现方式 |
 |------|-----------|---------|
@@ -644,16 +661,9 @@ $$
 
 ---
 
-## 十二、直观类比
+## 十二、各组成部分的作用
 
-把 PPO 训练想象成**学骑自行车**：
-
-- **Actor**：你的身体，决定怎么动
-- **Critic**：你的大脑，判断"这个姿势稳不稳"
-- **Advantage**：偏离平衡的程度（正 = 稳了，负 = 要倒了）
-- **Clipping**：你不会一次做太大动作调整（否则会摔），而是小步调整
-- **多轮更新**：同一段经验反复琢磨"刚才哪里做得不够好"
-- **熵正则化**：偶尔尝试新姿势，防止固化成坏习惯
+Actor 参数化动作分布，Critic 估计状态价值，优势函数衡量所采动作相对当前基线的收益。裁剪目标限制单个样本的概率比贡献，多轮更新提高同一批 on-policy 数据的利用率，熵正则则抑制策略过早退化为近确定性分布。这些机制分别作用于更新幅度、估计方差、样本复用与探索，不能由裁剪项单独替代。
 
 ---
 

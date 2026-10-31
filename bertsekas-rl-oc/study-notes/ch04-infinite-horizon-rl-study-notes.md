@@ -697,7 +697,7 @@ $\beta^s$：从 $i^s$ 出发、用 $\mu$ 仿真 $N$ 步折扣代价 + 终端 $\a
 **增量梯度**：
 
 ```math
-r_{k+1}=r_k-\gamma^k\nabla_{r_k}\big(\tilde J(i^{s_k},r_k)-\beta^{s_k}\big)^2.
+r_{k+1}=r_k-\eta_k\nabla_{r_k}\big(\tilde J(i^{s_k},r_k)-\beta^{s_k}\big)^2.
 ```
 
 **轨迹复用**：长轨迹 $(i_0,i_1,\ldots,i_N)$ 可为多个起始态提供 tail 样本。
@@ -773,7 +773,7 @@ $F$ 为模 $\alpha$ 压缩 → $Q_{k+1}=FQ_k\to Q^{*}$。
 采样 $(i_k,u_k)$，$j_k\sim p_{i_k\cdot}(u_k)$：
 
 ```math
-Q_{k+1}(i,u)=(1-\gamma^k)Q_k(i,u)+\gamma^k(F_k Q_k)(i,u), \qquad \text{(4.52)}
+Q_{k+1}(i,u)=(1-\eta_k)Q_k(i,u)+\eta_k(F_k Q_k)(i,u), \qquad \text{(4.52)}
 ```
 
 ```math
@@ -803,7 +803,7 @@ Q_k(i,u), & \text{否则}.
 |------|------|
 | 各 $(i,u)$ 无限访问 | 探索充分 |
 | $j_k$ 独立采样 | 给定 $(i_k,u_k)$ |
-| $\sum_k\gamma^k=\infty$，$\sum_k(\gamma^k)^2<\infty$ | 如 $\gamma^k=c_1/(k+c_2)$ |
+| $\sum_k\eta_k=\infty$，$\sum_k\eta_k^2<\infty$ | 如 $\eta_k=c_1/(k+c_2)$ |
 
 ⇒ $Q_k\to Q^{*}$ w.p.1（[Tsi94], [BeT96], [Ber12] §6.1.4）。嵌入异步 SA + 异步 DP（[Ber82], [BeT89]）。
 
@@ -825,7 +825,7 @@ Q_k(i,u), & \text{否则}.
 
 1. 转移 $(i_k\to i_{k+1})$；  
 2. $u_{k+1}=\arg\min_u\tilde Q(i_{k+1},u,r_k)$（可加 $\epsilon$-探索）；  
-3. $r_{k+1}=r_k-\gamma^k\phi(i_k,u_k)q_k$，
+3. $r_{k+1}=r_k-\eta_k\phi(i_k,u_k)q_k$，
 
 ```math
 q_k=\phi(i_k,u_k)'r_k-\alpha\phi(i_{k+1},u_{k+1})'r_k-g(i_k,u_k,i_{k+1}).
@@ -902,7 +902,7 @@ $\lambda=0$ → 一步 Bellman；$\lambda\to 1$ → 接近 Monte Carlo / $\Pi(J_
 **TD(0) 更新**：
 
 ```math
-J(i_k)\leftarrow J(i_k)+\gamma^k\big(g_k+\alpha J(i_{k+1})-J(i_k)\big). \qquad \text{(4.79 型)}
+J(i_k)\leftarrow J(i_k)+\eta_k\big(g_k+\alpha J(i_{k+1})-J(i_k)\big). \qquad \text{(4.79 型)}
 ```
 
 **时序差分 (4.77)**：
@@ -1050,7 +1050,7 @@ $\tilde J$ 线性或 NN → **一步前瞻策略类**；$r$ 由 (4.83) 或监督
 $i_0$ 已知：
 
 ```math
-r_{k+1}=r_k-\gamma^k\nabla_r J_{\tilde\mu(r_k)}(i_0). \qquad \text{(4.84)}
+r_{k+1}=r_k-\eta_k\nabla_r J_{\tilde\mu(r_k)}(i_0). \qquad \text{(4.84)}
 ```
 
 随机问题：$\nabla J$ 常不可解析，需 MC/有限差分 → **噪声大、需大量样本**（§4.11.1）；确定性问题则较易。
@@ -1066,7 +1066,7 @@ r_{k+1}=r_k-\gamma^k\nabla_r J_{\tilde\mu(r_k)}(i_0). \qquad \text{(4.84)}
 **样本梯度 (4.87)**（增量实现 (4.86)）：
 
 ```math
-r_{k+1}=r_k-\gamma^k\nabla_r\log p(z^k;r_k)\,F(z^k).
+r_{k+1}=r_k-\eta_k\nabla_r\log p(z^k;r_k)\,F(z^k).
 ```
 
 **模型无关**：只需轨迹代价 $F(z)$ 与 $\nabla_r\log p(z;r)$，**不需** $\nabla F$（§4.11.1）。

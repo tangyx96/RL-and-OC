@@ -178,7 +178,7 @@ $$
 =\mathbb{E}_{(\mathbf{o},\mathbf{a})\sim\mathcal{D}}\big[\|\mu_\theta(\mathbf{o})-\mathbf{a}\|^{2}\big]
 $$
 
-同最优。确定性回归 BC 即此特例：网络输出条件均值。GMM、能量模型与扩散策略不满足该高斯假设，仍以 $\mathcal{L}_{\mathrm{NLL}}$ 或其等价形式（去噪、score matching）为训练目标。
+同最优。确定性回归 BC 即此特例：网络输出条件均值。GMM、能量模型与扩散策略不满足该固定方差高斯假设。GMM 和规范化流可以直接优化对数似然；能量模型通常需要处理配分函数或负样本；扩散模型则优化由变分下界或去噪 score matching 导出的代理目标。DDPM 的加权去噪目标与 ELBO 的逐步 KL 对应，而实践常用的均匀 `simple loss` 丢弃了时间步权重，不能笼统视为 NLL 的数值等价形式。
 
 > 该方法实现简单，但训练分布为专家占用，部署时策略误差使状态分布偏移，误差沿时间累积（covariate shift）。若同一 $\mathbf{o}$ 对应多种合理动作，$\mathcal{L}_{\mathrm{BC}}$ 收敛到 $\mathbb{E}[\mathbf{a}\mid\mathbf{o}]$，动作被平均化，多模态任务上性能下降。
 
@@ -633,13 +633,34 @@ L_simple = MSE(ε, ε_θ)   ← Diffusion Policy 实际优化
 
 ## 五、Score function 视角与 IBC 的对比
 
-Song et al. 指出，DDPM 的去噪方向与 score function $\nabla_x \log q(x)$ 相关。对加噪分布 $q(x_k \mid x_0)$，有
+Song et al. 指出，DDPM 的去噪方向与 score function $\nabla_x \log q(x)$ 相关。对给定干净样本的加噪核 $q(x_k \mid x_0)$，有
 
 $$
 \nabla_{x_k} \log q(x_k \mid x_0) = -\frac{1}{\sqrt{1 - \bar{\alpha}_k}}\, \epsilon.
 $$
 
-因此 $\epsilon_\theta(x_k, k) \approx -\sqrt{1 - \bar{\alpha}_k}\, \nabla_{x_k} \log p(x_k \mid \mathbf{O}_t)$：网络学习的是**条件 score function**，即对数条件密度的梯度方向。
+网络在均方误差下的总体最优输出不是某一次实际加入的噪声，而是后验均值
+
+$$
+\epsilon_\theta^*(x_k,k,\mathbf O_t)
+=\mathbb E[\epsilon\mid x_k,\mathbf O_t].
+$$
+
+Fisher identity 给出噪声边缘的条件 score：
+
+$$
+\begin{aligned}
+\nabla_{x_k}\log q_k(x_k\mid\mathbf O_t)
+&=\mathbb E\!\left[
+\nabla_{x_k}\log q(x_k\mid x_0)
+\mid x_k,\mathbf O_t
+\right]\\
+&=-\frac{\mathbb E[\epsilon\mid x_k,\mathbf O_t]}
+{\sqrt{1-\bar\alpha_k}}.
+\end{aligned}
+$$
+
+因此 $\epsilon_\theta\approx-\sqrt{1-\bar\alpha_k}\,\nabla_{x_k}\log q_k(x_k\mid\mathbf O_t)$。网络逼近的是给定观测后、对未知干净动作边缘化所得的噪声边缘 score，而不是单个训练样本的条件核 score。
 
 隐式行为克隆（IBC）建模 $p(\mathbf{a} \mid \mathbf{o}) \propto \exp(-E_\theta(\mathbf{a}, \mathbf{o}))$，训练需估计配分函数 $Z(\mathbf{o}) = \int \exp(-E_\theta(\mathbf{a}, \mathbf{o}))\, d\mathbf{a}$ 或采样负样本。Score matching 形式下，
 
@@ -717,7 +738,7 @@ $\{\beta_k\}$ 控制各步加噪幅度。控制任务中，论文采用 iDDPM �
 
 标准 DDPM 推理需 $K$ 步去噪（如 $K=100$），难以满足实时控制。DDIM（Song et al., 2021）将训练步数与推理步数解耦：训练仍用 $K$ 步前向过程，推理可跳步至 $N \ll K$。论文实机配置为 $K=100$ 训练、$N=10$ 推理，在 Nvidia 3080 上约 0.1 s 延迟。
 
-DDIM 走确定性 ODE 轨迹，去除 DDPM 反向过程中的随机项，以少量多样性换取速度。对机器人控制，动作精度通常优先于生成多样性。
+$\eta=0$ 时 DDIM 的每一步都是确定性映射；在连续时间极限下，它可与相应的确定性 ODE 表述联系。有限步 DDIM 更新本身不应与精确积分 probability-flow ODE 混为一谈。其加速主要来自使用子采样时间网格、减少网络评估次数；去除每步随机项同时降低了给定初始噪声后的额外采样随机性。
 
 ---
 

@@ -123,7 +123,7 @@ r=\Big(\sum_s \phi(x^s)\phi(x^s)'\Big)^{-1}\sum_s \phi(x^s)\beta^s.
 #### 全梯度法 (3.5)
 
 ```math
-y^{k+1}=y^k-\gamma^k\nabla f(y^k)=y^k-\gamma^k\sum_{i=1}^m\nabla f_i(y^k).
+y^{k+1}=y^k-\eta_k\nabla f(y^k)=y^k-\eta_k\sum_{i=1}^m\nabla f_i(y^k).
 ```
 
 每步需**全部** $m$ 个分量梯度——$m$ 大时（NN 训练）代价高。
@@ -135,7 +135,7 @@ y^{k+1}=y^k-\gamma^k\nabla f(y^k)=y^k-\gamma^k\sum_{i=1}^m\nabla f_i(y^k).
 每步只用**一个**分量：
 
 ```math
-y^{k+1}=y^k-\gamma^k\nabla f_{i_k}(y^k),
+y^{k+1}=y^k-\eta_k\nabla f_{i_k}(y^k),
 ```
 
 $i_k\in\{1,\ldots,m\}$ 由选取规则决定。**计算**：每步 1 次梯度 vs 全梯度 $m$ 次。
@@ -154,10 +154,10 @@ $i_k\in\{1,\ldots,m\}$ 由选取规则决定。**计算**：每步 1 次梯度 v
 
 | 阶段 | 增量 vs 全梯度 |
 |------|----------------|
-| **(a) 远离最优** | 单分量梯度常指向「大致正确」方向；极端地 $f_i\equiv f$ 时，增量步长取 $\gamma^k m$ 等价全梯度一步 → **可快 ~$m$ 倍** |
-| **(b) 接近最优** | 全梯度在合理假设下可**常数步长**收敛；增量法一般需 $\gamma^k\to 0$，极限速率可更慢 |
+| **(a) 远离最优** | 单分量梯度常指向「大致正确」方向；极端地 $f_i\equiv f$ 时，增量步长取 $\eta_k m$ 等价全梯度一步 → **可快 ~$m$ 倍** |
+| **(b) 接近最优** | 全梯度在合理假设下可**常数步长**收敛；增量法一般需 $\eta_k\to 0$，极限速率可更慢 |
 
-**步长尺度**：为保持远离最优时的优势，增量法常用比全梯度**大 ~$m$ 倍**的 $\gamma^k$（使单步增量与全梯度步幅相当）。
+**步长尺度**：为保持远离最优时的优势，增量法常用比全梯度**大 ~$m$ 倍**的 $\eta_k$（使单步增量与全梯度步幅相当）。
 
 ---
 
@@ -175,7 +175,7 @@ y^{*}=\frac{\sum_{i=1}^m c_i b_i}{\sum_{i=1}^m c_i^2}.
 
 **Region of confusion**：$R=[\min_i y_i^{*},\max_i y_i^{*}]$。在 $R$ **外**（far-out region），各 $\nabla f_i(y)=c_i(c_i y-b_i)$ 与 $\nabla f(y)$ **同号** → 小步长下单步增量朝 $y^{*}$ 前进。
 
-**$R$ 内**：第 $i$ 步仅当 $y^k$ 不在 $[y_i^{*},y^{*}]$ 上才朝 $y^{*}$ 前进 → **振荡**；增量法需 $\gamma^k\to 0$ 才收敛。
+**$R$ 内**：第 $i$ 步仅当 $y^k$ 不在 $[y_i^{*},y^{*}]$ 上才朝 $y^{*}$ 前进 → **振荡**；增量法需 $\eta_k\to 0$ 才收敛。
 
 **全梯度**（常数步长）：
 
@@ -191,17 +191,17 @@ y^{k+1}=y^k-\gamma\sum_{i=1}^m c_i(c_i y^k-b_i),\quad 0<\gamma\le\frac{1}{\sum_{
 
 #### 步长选择与对角缩放
 
-**收敛要求**：增量方向与真梯度差 $\propto\gamma^k$ → 收敛到局部极小需 $\gamma^k\to 0$（非凸时仅能期望局部极小）。
+**收敛要求**：增量方向与真梯度差 $\propto\eta_k$ → 收敛到局部极小需 $\eta_k\to 0$（非凸时仅能期望局部极小）。
 
 **常数小步长**：迭代进入 **limit cycle**——cycle 内第 $i$ 步子序列 $\psi_i$ 各收敛到**不同**极限；cycle 末的 $y^k$ 序列收敛，但极限**未必**是 $f$ 的极小（凸 $f$ 亦如此），通常接近最优。实践：**分段衰减**（常数若干 iter → 乘因子降步长 → 重复至 floor）。
 
 **递减步长例**：
 
 ```math
-\gamma^k=\min\Big\{\bar\gamma,\,\frac{\beta_1}{k+\beta_2}\Big\},\quad \bar\gamma,\beta_1,\beta_2>0.
+\eta_k=\min\Big\{\bar\eta,\,\frac{\beta_1}{k+\beta_2}\Big\},\quad \bar\eta,\beta_1,\beta_2>0.
 ```
 
-**自适应**：检测振荡（在 confusion region）时减小 $\gamma^k$；见 [Tse98], [MYF03], [GOP15a]。
+**自适应**：检测振荡（在 confusion region）时减小 $\eta_k$；见 [Tse98], [MYF03], [GOP15a]。
 
 **对角缩放**：各坐标 $\gamma_j^k$ 不同；一般 NLP 用 $\gamma_j^k=\gamma\big/\frac{\partial^2 f}{\partial y_j^2}(y^k)$。但对**加性** $f=\sum f_i$，二阶导不便于逐分量累加——见下 **增量 Newton** 的对角缩放。
 
@@ -212,7 +212,7 @@ y^{k+1}=y^k-\gamma\sum_{i=1}^m c_i(c_i y^k-b_i),\quad 0<\gamma\le\frac{1}{\sum_{
 **SGD**（最小化期望）：
 
 ```math
-\min_y f(y)=\mathbb{E}_w\big[F(y,w)\big],\qquad y^{k+1}=y^k-\gamma^k\nabla_y F(y^k,w^k),
+\min_y f(y)=\mathbb{E}_w\big[F(y,w)\big],\qquad y^{k+1}=y^k-\eta_k\nabla_y F(y^k,w^k),
 ```
 
 $w^k$ 为 $w$ 的样本；与随机逼近、机器学习「SGD/backprop」同源 [BeT96], [KuY03], [Spa03] 等。
@@ -231,7 +231,7 @@ $w^k$ 为 $w$ 的样本；与随机逼近、机器学习「SGD/backprop」同源
 用最近 $m$ 次分量梯度之和近似全梯度：
 
 ```math
-y^{k+1}=y^k-\gamma^k\sum_{\ell=0}^{m-1}\nabla f_{i_{k-\ell}}(y^{k-\ell}).
+y^{k+1}=y^k-\eta_k\sum_{\ell=0}^{m-1}\nabla f_{i_{k-\ell}}(y^{k-\ell}).
 ```
 
 （$k<m$ 时求和至 $\ell=k$，步长相应放大。）
@@ -446,7 +446,7 @@ $L_k$ = 第 $k$ 线性层矩阵；$\Sigma_k$ = 对向量逐分量施 $\sigma$。
 
 ---
 
-#### 为何多层？（单隐层已万能逼近）
+#### 多层网络的表达能力（单隐层已具备万能逼近性质）
 
 | 理由 | 说明 |
 |------|------|

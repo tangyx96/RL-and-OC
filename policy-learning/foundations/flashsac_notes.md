@@ -9,7 +9,7 @@ Kim et al., *FlashSAC: Fast and Stable Off-Policy Reinforcement Learning for Hig
 
 FlashSAC 以 Soft Actor-Critic（SAC）为骨架，面向高维机器人控制（灵巧操作、人形 locomotion、视觉策略）的 off-policy Actor-Critic 学习。PPO 在低维任务且仿真吞吐极高时通常稳定且足够；当状态–动作维数升高，on-policy 数据的支撑集过窄，样本丢弃直接体现为 wall-clock 时间的浪费。标准 off-policy 方法虽可复用经验回放，但在宽分布上拟合 bootstrapped $Q$ 需大量梯度步，逼近误差经 Bellman 备份放大，导致训练缓慢且不稳定。
 
-FlashSAC 的核心主张：在固定算力预算下，以更大网络、更大 batch、更低更新–数据比（UTD）换取 wall-clock 效率；同时以结构约束限制权重、激活与梯度范数，使容量扩展不致破坏 critic 稳定性；并以与动作维数成比例的目标熵与噪声重复机制补充探索。
+FlashSAC 的设计假设是：在论文所考察的固定算力与并行仿真配置下，较大网络、较大 batch 与较低更新–数据比（UTD）可以改善 wall-clock 效率；同时以权重、激活与梯度尺度控制缓解容量扩展时的 critic 不稳定，并以与动作维数成比例的目标熵和噪声重复机制补充探索。这些结论是具体配方的经验结果，不是对任意任务或任意网络结构的普遍保证。
 
 | 特性 | PPO | SAC | FlashSAC |
 |------|-----|-----|----------|
@@ -94,7 +94,7 @@ CPU 单环境、样本为瓶颈时：batch 改为 512，UTD = 1，其余设计�
 
 ## 五、稳定性：约束权重、特征与梯度范数
 
-Bellman 备份将 $s'$ 上的误差传回当前目标。FlashSAC 通过一组结构约束，使参数、激活与梯度范数在训练过程中保持有界，并降低 critic 损失的条件数（消融中逐项加入后条件数单调下降）。
+Bellman 备份会将 $s'$ 上的估计误差传回当前目标。FlashSAC 采用一组结构约束控制参数、激活与梯度的数值尺度，并在论文报告的消融中降低 critic 损失的有效条件数。该观察不构成对非线性训练动力学全程有界或全局收敛的理论证明。
 
 ### 5.1 Inverted residual 与 RMSNorm
 

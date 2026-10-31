@@ -27,11 +27,18 @@ $$
 J(\theta) = \mathbb{E}_{\tau \sim \pi_\theta} \left[ \sum_{t=0}^{T} \gamma^t r_t \right]
 $$
 
-策略梯度定理给出了梯度：
+以归一化折扣占用测度 $d_\gamma^{\pi_\theta}$ 为采样分布时，策略梯度可写为（忽略与 $\theta$ 无关的比例常数）：
 
 $$
-\nabla_\theta J(\theta) = \mathbb{E}\left[ \nabla_\theta \log \pi_\theta(a_t|s_t) \cdot \hat{A}_t \right]
+\nabla_\theta J(\theta)
+\propto
+\mathbb E_{(s,a)\sim d_\gamma^{\pi_\theta}}
+\left[
+\nabla_\theta\log\pi_\theta(a\mid s)\,A^{\pi_\theta}(s,a)
+\right].
 $$
+
+若直接对一条轨迹求和，则每个时刻还带有 $\gamma^t$；常见 PPO 实现使用 rollout 的等权经验分布，得到的是相应的样本梯度代理。两种约定在后文分别说明。
 
 **直观理解**：
 
@@ -141,10 +148,10 @@ $$
 =\mathbb{E}\left[\sum_{t=0}^{T}\sum_{k=0}^{T}\nabla_\theta\log\pi_\theta(a_t|s_t)\cdot\gamma^k r_k\right]
 $$
 
-固定 $s_t$，score 对动作求平均必为 0（概率和为 1）：
+给定选择 $a_t$ 之前的完整历史 $\mathcal F_t$，score 对动作求平均必为 0（概率和为 1）：
 
 $$
-\mathbb{E}\big[\nabla_\theta\log\pi_\theta(a_t|s_t)\mid s_t\big]
+\mathbb{E}\big[\nabla_\theta\log\pi_\theta(a_t|s_t)\mid\mathcal F_t\big]
 =\int\pi_\theta(a|s_t)\,\nabla_\theta\log\pi_\theta(a|s_t)\,da
 =\nabla_\theta\int\pi_\theta(a|s_t)\,da
 =\nabla_\theta 1=0
@@ -152,7 +159,7 @@ $$
 
 对每个 $(t,k)$ 分两种：
 
-- **$k<t$**：到达 $s_t$ 时 $r_k$ 已确定，故 $\mathbb{E}[\nabla\log\pi\cdot r_k\mid s_t]=r_k\cdot\mathbb{E}[\nabla\log\pi\mid s_t]=r_k\cdot 0=0$，再取外层期望仍为 0。
+- **$k<t$**：在 $\mathcal F_t$ 下，$r_k$ 已确定，故 $\mathbb{E}[\nabla\log\pi\cdot r_k\mid\mathcal F_t]=r_k\cdot\mathbb{E}[\nabla\log\pi\mid\mathcal F_t]=r_k\cdot0=0$，再取外层期望仍为 $0$。
 - **$k\ge t$**：$r_k$ 还取决于 $a_t$，不能提出去，这才是真正的信号。
 
 因此内层只留下 $k\ge t$。令 $G_t=\sum_{t'=t}^{T}\gamma^{t'-t}r_{t'}$，则对上述折扣回报目标有

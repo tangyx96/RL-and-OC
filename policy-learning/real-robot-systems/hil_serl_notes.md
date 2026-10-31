@@ -4,7 +4,7 @@
 
 训练入口为 `examples/train_rlpd.py`，分为 `--actor` 与 `--learner` 两个进程。数据经 agentlace 的队列 `actor_env` 与 `actor_env_intvn` 进入 learner。连续动作的损失位于 `serl_launcher/agents/continuous/sac.py` 的 `critic_loss_fn`、`policy_loss_fn` 与 `temperature_loss_fn`。双臂夹爪的离散 critic 位于 `sac_hybrid_dual.py` 的 `grasp_critic_loss_fn` 与 `sample_actions`。集成规模、LayerNorm 与熵备份开关由 `serl_launcher/utils/launcher.py` 的 `make_sac_pixel_agent` 设定。相对坐标在 `serl_robot_infra/franka_env/envs/relative_env.py` 的 `RelativeFrame`，介入在 `envs/wrappers.py` 的 `SpacemouseIntervention`。
 
-soft Bellman、双 $Q$ 与温度对偶见 [`sac_notes.md`](sac_notes.md) 第五至七节。高维 off-policy 中的范数约束见 [`flashsac_notes.md`](flashsac_notes.md)。扩散策略上的真机后训练见 [`rl100_notes.md`](rl100_notes.md)。SAC 的推导沿用上述笔记。本文只记录 HIL-SERL 的改动：介入数据写入哪个缓冲、批次如何对半抽样、夹爪为何单独构成 MDP、观测与底层控制器如何把策略接到机器人，以及表中 $100\%$ 所对应的评估协议。
+soft Bellman、双 $Q$ 与温度对偶见 [`sac_notes.md`](../foundations/sac_notes.md) 第五至七节。高维 off-policy 中的范数约束见 [`flashsac_notes.md`](../foundations/flashsac_notes.md)。扩散策略上的真机后训练见 [`rl100_notes.md`](../generative-rl/rl100_notes.md)。SAC 的推导沿用上述笔记。本文只记录 HIL-SERL 的改动：介入数据写入哪个缓冲、批次如何对半抽样、夹爪为何单独构成 MDP、观测与底层控制器如何把策略接到机器人，以及表中 $100\%$ 所对应的评估协议。
 
 ---
 
@@ -60,7 +60,7 @@ $$
 Q_\phi(s,a)
 -
 \big(
-r(s,a)+\gamma\,\mathbb{E}_{a'\sim\pi_\theta}[\bar Q(s',a')]
+r(s,a)+\gamma(1-d)\,\mathbb{E}_{a'\sim\pi_\theta}[\bar Q(s',a')]
 \big)
 \big)^2
 \Big],
@@ -76,7 +76,7 @@ r(s,a)+\gamma\,\mathbb{E}_{a'\sim\pi_\theta}[\bar Q(s',a')]
 \end{aligned}
 $$
 
-$\bar Q$ 为目标网络。$\mathcal{L}_Q$ 里的转移来自缓冲，$a'\sim\pi_\theta(\cdot\mid s')$ 由当前策略重新采样。$\mathcal{L}_\pi$ 的状态来自 $\mu$，内层动作是 $\pi_\theta$ 的新样本。人执行过的动作进入 $Q_\phi(s,a)$ 的回归，actor 再在这些状态上沿着 $Q$ 调整 $\pi$。损失中没有行为克隆项，也没有指向演示动作的正则。$\alpha$ 按 Haarnoja et al. (2018) 自适应调节。
+$d$ 是真正终止的指示；纯时间上限截断不应置 $d=1$。$\bar Q$ 为目标网络。$\mathcal{L}_Q$ 里的转移来自缓冲，$a'\sim\pi_\theta(\cdot\mid s')$ 由当前策略重新采样。$\mathcal{L}_\pi$ 的状态来自 $\mu$，内层动作是 $\pi_\theta$ 的新样本。人执行过的动作进入 $Q_\phi(s,a)$ 的回归，actor 再在这些状态上沿着 $Q$ 调整 $\pi$。损失中没有行为克隆项，也没有指向演示动作的正则。$\alpha$ 按 Haarnoja et al. (2018) 自适应调节。
 
 介入转移写入两个缓冲，在 $\mu$ 下的权重高于只存在于在线缓冲的策略转移。$\mu_{\mathrm{demo}}$ 随介入追加纳入这些新转移，$\mu_{\mathrm{online}}$ 中亦有一份。缓冲的写入见第三节。
 
@@ -386,16 +386,16 @@ DPPO 笔记的第二段不再读取演示，样本在使用后丢弃。HIL-SERL 
 1. Luo, Xu, Wu, and Levine, *Precise and Dexterous Robotic Manipulation via Human-in-the-Loop Reinforcement Learning*, arXiv:2410.21845v3, 2025. 代码：[rail-berkeley/hil-serl](https://github.com/rail-berkeley/hil-serl)
 2. Luo et al., *SERL: A Software Suite for Sample-Efficient Robotic Reinforcement Learning*, ICRA 2024.
 3. Ball, Smith, Kostrikov, and Levine, *Efficient Online Reinforcement Learning with Offline Data*, ICML 2023.
-4. Haarnoja et al., *Soft Actor-Critic Algorithms and Applications*, arXiv:1812.05905, 2018. [`sac_notes.md`](sac_notes.md)
+4. Haarnoja et al., *Soft Actor-Critic Algorithms and Applications*, arXiv:1812.05905, 2018. [`sac_notes.md`](../foundations/sac_notes.md)
 5. Song et al., *Hybrid RL: Using Both Offline and Online Data Can Make RL Efficient*, ICLR 2023.
 6. van Hasselt, Guez, and Silver, *Deep Reinforcement Learning with Double Q-learning*, AAAI 2016. 式 (3) 将 $\arg\max$ 与求值分开。
 7. Kelly, Sidrane, Driggs-Campbell, and Kochenderfer, *HG-DAgger*, ICRA 2019.
-8. Chi et al., *Diffusion Policy*, RSS 2023. 表 1b 的模仿基线。[`diffusion_policy_notes.md`](diffusion_policy_notes.md)
+8. Chi et al., *Diffusion Policy*, RSS 2023. 表 1b 的模仿基线。[`diffusion_policy_notes.md`](../generative-policies/diffusion_policy_notes.md)
 9. Johannink et al., *Residual Reinforcement Learning*, ICRA 2019.
 10. Rajeswaran et al., *Learning Complex Dexterous Manipulation with Deep Reinforcement Learning and Demonstrations*, RSS 2018. DAPG。
 11. Hu, Hendrycks, et al., *IBRL: Imitation Bootstrapped Reinforcement Learning*, 2024.
 12. Burridge, Rizzi, and Koditschek, *Sequential Composition of Dynamically Dexterous Robot Behaviors*, IJRR 1999.
 13. Tedrake, Manchester, Tobenkin, and Roberts, *LQR-Trees*, IJRR 2010.
-14. Lei et al., *RL-100*, arXiv:2510.14830. [`rl100_notes.md`](rl100_notes.md)
+14. Lei et al., *RL-100*, arXiv:2510.14830. [`rl100_notes.md`](../generative-rl/rl100_notes.md)
 
 建议先读 SAC 笔记第五至七节，再读本文第二至五节。实现上可核对 `train_rlpd.py` 的缓冲写入、`concat_batches` 的拼接轴，以及 `launcher.py` 中的 `backup_entropy` 与 `critic_ensemble_size`。表 1a 的汇总口径见第九节。

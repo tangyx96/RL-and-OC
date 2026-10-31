@@ -4,7 +4,7 @@
 
 去噪一步的高斯对数概率写在 `rl_100/unidpg/diffusion_policy/diffusers_patch/ddim_with_logprob.py`。离线更新是 `BehaviorProximalPolicyOptimization.update_distribution`，在线更新是同文件的 `dp_align_update_no_share`，类定义在 `rl_100/unidpg/uni_ppo.py`。IQL 的期望分位与 $Q-V$ 在 `rl_100/unidpg/critic.py`。行为策略是否前进由 `RL-100/train.py` 的 `finetune_dp3` 根据动力学模型上的 $Q$ 均值决定，复制权重的是 `rl_100/unidpg/ppo.py` 的 `set_old_policy`。一致性蒸馏在 `rl_100/policy/rl100_3d.py`。
 
-$\epsilon$-prediction 与 DDIM 见 [`diffusion_policy_notes.md`](diffusion_policy_notes.md) 第四、八节；裁剪目标与 GAE 见 [`ppo_notes.md`](ppo_notes.md) 第五、七节；把裁剪目标写到每一步去噪上见 [`dppo_notes.md`](dppo_notes.md) 第三至六节。本文沿用这些推导，只记录 RL-100 的改动：离线优势的来源、行为策略的替换条件、一步学生的训练，以及真机数据如何并回。
+$\epsilon$-prediction 与 DDIM 见 [`diffusion_policy_notes.md`](../generative-policies/diffusion_policy_notes.md) 第四、八节；裁剪目标与 GAE 见 [`ppo_notes.md`](../foundations/ppo_notes.md) 第五、七节；把裁剪目标写到每一步去噪上见 [`dppo_notes.md`](dppo_notes.md) 第三至六节。本文沿用这些推导，只记录 RL-100 的改动：离线优势的来源、行为策略的替换条件、一步学生的训练，以及真机数据如何并回。
 
 ---
 
@@ -930,8 +930,8 @@ DPPO 的第二段为纯 on-policy，不再使用专家数据，样本效率较�
 ## 十五、参考文献与阅读顺序
 
 1. Lei et al., *RL-100: Performant Robotic Manipulation with Real-World Reinforcement Learning*, arXiv:2510.14830, 2025；*Science Robotics* 11(116), aed6267, 2026. 代码：[Lei-Kun/RL-100](https://github.com/Lei-Kun/RL-100)
-2. Chi et al., *Diffusion Policy*, RSS 2023. [`diffusion_policy_notes.md`](diffusion_policy_notes.md)
-3. Schulman et al., *Proximal Policy Optimization Algorithms*, 2017. [`ppo_notes.md`](ppo_notes.md)
+2. Chi et al., *Diffusion Policy*, RSS 2023. [`diffusion_policy_notes.md`](../generative-policies/diffusion_policy_notes.md)
+3. Schulman et al., *Proximal Policy Optimization Algorithms*, 2017. [`ppo_notes.md`](../foundations/ppo_notes.md)
 4. Schulman et al., *High-Dimensional Continuous Control Using Generalized Advantage Estimation*, ICLR 2016.
 5. Ren et al., *Diffusion Policy Policy Optimization*, arXiv:2409.00588, 2024. [`dppo_notes.md`](dppo_notes.md)
 6. Kostrikov, Nair, and Levine, *Offline Reinforcement Learning with Implicit Q-Learning*, ICLR 2022.

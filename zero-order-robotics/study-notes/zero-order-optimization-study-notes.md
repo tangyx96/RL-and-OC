@@ -3,7 +3,7 @@
 > **文献**：Armand Jordana, Jianghan Zhang, Joseph Amigo, Ludovic Righetti, *An Introduction to Zero-Order Optimization Techniques for Robotics*（[arXiv:2506.22087](https://arxiv.org/abs/2506.22087) v2, Oct 2025）。  
 > **定位**：以随机搜索为主线，讨论机器人中的函数值优化。控制序列搜索和策略参数搜索均可写成 $\min_x f(x)$；两类问题分别具有时域动力学结构和策略诱导的状态分布。
 > **式号**：本笔记的编号。自式 (7) 起与论文不完全相同。文献号与论文参考文献一致。
-> **延伸**：从搜索分布、KL 正则化与信息几何连接 IGO、CMA、MPPI 和策略优化，见 [`分布空间中的策略优化`](../../policy-learning/distribution-space-policy-optimization.md)。
+> **延伸**：从搜索分布、KL 正则化与信息几何连接 IGO、CMA、MPPI 和策略优化，见 [`分布空间中的策略优化`](../../policy-learning/foundations/distribution-space-policy-optimization.md)。
 
 ---
 

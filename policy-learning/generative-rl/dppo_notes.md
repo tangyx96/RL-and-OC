@@ -1,8 +1,8 @@
 # DPPO（Diffusion Policy Policy Optimization）算法笔记
 
 下文对应 Ren et al., *Diffusion Policy Policy Optimization*（[arXiv:2409.00588](https://arxiv.org/pdf/2409.00588)）。实现见 [irom-princeton/dppo](https://github.com/irom-princeton/dppo)：去噪步的高斯密度在 `model/diffusion/diffusion_vpg.py`，PPO 损失在 `model/diffusion/diffusion_ppo.py`，采样与 GAE 在 `agent/finetune/train_ppo_diffusion_agent.py`。  
-去噪过程与 $\epsilon$-prediction 见 [`diffusion_policy_notes.md`](diffusion_policy_notes.md)；裁剪目标与 GAE 见 [`ppo_notes.md`](ppo_notes.md)。
-从 KL 正则化的理想策略改进、score tilting 与投影角度理解 DPPO 和其他 diffusion-RL 路线，见 [`distribution-space-policy-optimization.md`](distribution-space-policy-optimization.md)。
+去噪过程与 $\epsilon$-prediction 见 [`diffusion_policy_notes.md`](../generative-policies/diffusion_policy_notes.md)；裁剪目标与 GAE 见 [`ppo_notes.md`](../foundations/ppo_notes.md)。
+从 KL 正则化的理想策略改进、score tilting 与投影角度理解 DPPO 和其他 diffusion-RL 路线，见 [`distribution-space-policy-optimization.md`](../foundations/distribution-space-policy-optimization.md)。
 
 ---
 
@@ -413,8 +413,8 @@ MLP 微调更稳。全连接把整个 $T_p$ 绑在一起，微调时若 $T_a<T_p
 ## 十一、参考文献与阅读顺序
 
 1. Ren et al., *Diffusion Policy Policy Optimization*, arXiv:2409.00588, 2024. 代码：[irom-princeton/dppo](https://github.com/irom-princeton/dppo)
-2. Chi et al., *Diffusion Policy*, RSS 2023. [`diffusion_policy_notes.md`](diffusion_policy_notes.md)
-3. Schulman et al., *Proximal Policy Optimization Algorithms*, 2017. [`ppo_notes.md`](ppo_notes.md)
+2. Chi et al., *Diffusion Policy*, RSS 2023. [`diffusion_policy_notes.md`](../generative-policies/diffusion_policy_notes.md)
+3. Schulman et al., *Proximal Policy Optimization Algorithms*, 2017. [`ppo_notes.md`](../foundations/ppo_notes.md)
 4. Schulman et al., *High-Dimensional Continuous Control Using Generalized Advantage Estimation*, 2016.
 5. Black et al., *Training Diffusion Models with Reinforcement Learning*（DDPO）, arXiv:2305.13301, 2023.
 6. Ho et al., *Denoising Diffusion Probabilistic Models*, NeurIPS 2020.

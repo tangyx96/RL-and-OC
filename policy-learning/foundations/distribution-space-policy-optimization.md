@@ -2,7 +2,7 @@
 
 > **定位**：本文综述策略学习、零阶优化、采样控制与生成式策略中的分布优化方法，重点讨论 KL 约束、指数重权、重要性采样、加权极大似然与自然梯度之间的关系。  
 > **主线**：首先在概率分布空间中求解正则化策略改进，再将所得分布投影到可计算的模型族。具体算法由优化对象、信息来源、散度方向、投影方式和策略参数化共同确定。  
-> **相关笔记**：零阶优化与 MPPI/CMA 见 [`zero-order-optimization-study-notes.md`](../zero-order-robotics/study-notes/zero-order-optimization-study-notes.md)；PPO、SAC、Diffusion Policy 与 DPPO 分别见 [`ppo_notes.md`](ppo_notes.md)、[`sac_notes.md`](sac_notes.md)、[`diffusion_policy_notes.md`](diffusion_policy_notes.md) 和 [`dppo_notes.md`](dppo_notes.md)。
+> **相关笔记**：零阶优化与 MPPI/CMA 见 [`zero-order-optimization-study-notes.md`](../../zero-order-robotics/study-notes/zero-order-optimization-study-notes.md)；PPO、SAC、Diffusion Policy 与 DPPO 分别见 [`ppo_notes.md`](ppo_notes.md)、[`sac_notes.md`](sac_notes.md)、[`diffusion_policy_notes.md`](../generative-policies/diffusion_policy_notes.md) 和 [`dppo_notes.md`](../generative-rl/dppo_notes.md)。
 
 ---
 

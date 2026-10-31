@@ -956,7 +956,7 @@ $\mathcal K_w$ 正是求解器已经因子分解过的 KKT 矩阵，因此反向
 
 基于 rollout 的策略学习还可以利用策略和价值函数的可微结构。REINFORCE 通过似然比恒等式使用 score $\nabla_\theta\log\pi_\theta(a\mid s)$ 估计策略梯度；环境只需返回样本和回报。确定性策略梯度及 SAC 的 actor 更新使用 critic 关于动作的导数，并通过策略网络反向传播。TRPO 与 PPO 根据优势估计和概率比构造局部策略更新，REPS、MPO 与 AWR/AWAC 则采用相对熵约束或优势加权投影。
 
-这些方法都可能使用环境 rollout，但其更新信息分别来自参数扰动、似然比、critic 导数或分布投影。比较策略优化算法时，需要同时说明优化对象、数据来源、梯度或改进量的估计方式以及更新所采用的几何。相关的函数值方法见[零阶优化笔记](../../zero-order-robotics/study-notes/zero-order-optimization-study-notes.md)，KL 正则化和分布投影见[分布空间中的策略优化](../../policy-learning/distribution-space-policy-optimization.md)。
+这些方法都可能使用环境 rollout，但其更新信息分别来自参数扰动、似然比、critic 导数或分布投影。比较策略优化算法时，需要同时说明优化对象、数据来源、梯度或改进量的估计方式以及更新所采用的几何。相关的函数值方法见[零阶优化笔记](../../zero-order-robotics/study-notes/zero-order-optimization-study-notes.md)，KL 正则化和分布投影见[分布空间中的策略优化](../../policy-learning/foundations/distribution-space-policy-optimization.md)。
 
 ## 10. 统一性的范围与边界
 
@@ -1001,7 +1001,7 @@ $\mathcal K_w$ 正是求解器已经因子分解过的 KKT 矩阵，因此反向
 
 本文把最优控制数值算法分解为转录、局部曲率、结构化线性代数、约束处理、前向更新、全局化和实时调度七个层次。具体算法是这些选择的组合；真正可以严格等同的是同一线性--二次子问题的不同求解表述，而不是所有最优控制理论之间的无条件等价。
 
-第一次阅读可按 Kelly 的直接配点教程、Tassa 等的 iLQR/DDP、Giftthaler 等的 GNMS、Mastalli 等的 FDDP、Jordana 等的结构化 SQP、acados/HPIPM 的工程实现依次推进。随后可按信息条件分流：显式非光滑结构读近端点、Douglas--Rachford/ADMM 与增广拉格朗日；仅有 rollout 时转入仓库的[零阶优化笔记](../../zero-order-robotics/study-notes/zero-order-optimization-study-notes.md)和[零阶最优控制扩展](../../zero-order-robotics/study-notes/zero-order-optimal-control-extension.md)；优化对象由控制序列转为策略或动作分布后，再读[分布空间中的策略优化](../../policy-learning/distribution-space-policy-optimization.md)。这条阅读线连接了数值最优控制、黑箱 MPC 与策略学习，但保留了导数 oracle、score-function 梯度和纯参数黑箱搜索之间的区别。
+第一次阅读可按 Kelly 的直接配点教程、Tassa 等的 iLQR/DDP、Giftthaler 等的 GNMS、Mastalli 等的 FDDP、Jordana 等的结构化 SQP、acados/HPIPM 的工程实现依次推进。随后可按信息条件分流：显式非光滑结构读近端点、Douglas--Rachford/ADMM 与增广拉格朗日；仅有 rollout 时转入仓库的[零阶优化笔记](../../zero-order-robotics/study-notes/zero-order-optimization-study-notes.md)和[零阶最优控制扩展](../../zero-order-robotics/study-notes/zero-order-optimal-control-extension.md)；优化对象由控制序列转为策略或动作分布后，再读[分布空间中的策略优化](../../policy-learning/foundations/distribution-space-policy-optimization.md)。这条阅读线连接了数值最优控制、黑箱 MPC 与策略学习，但保留了导数 oracle、score-function 梯度和纯参数黑箱搜索之间的区别。
 
 ## 参考文献
 

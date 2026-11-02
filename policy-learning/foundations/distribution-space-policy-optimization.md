@@ -1278,6 +1278,38 @@ $$
 
 用样本替代期望即得指数加权扰动更新。执行时只施加新序列的第一个控制，再根据下一状态平移 horizon 并重新求解。与 actor 学习相比，它不把不同状态下的解压缩进一个共享神经网络，而是把计算留在每个控制周期。
 
+### 6.4 PI-MPC 与策略优化：同一变分骨架，不同的摊销方式
+
+把有限时域控制序列记为 $\mathbf{u}_{0:H-1}$，PI-MPC 的理想更新可写为
+
+$$
+q^*(\mathbf{u}_{0:H-1}\mid s)
+\propto
+p_0(\mathbf{u}_{0:H-1}\mid s)
+\exp\left[-\frac{J_\tau(s,\mathbf{u}_{0:H-1})}{\lambda}\right].
+\tag{83}
+$$
+
+它是相对先验 $p_0$ 的轨迹级后验，也等价于最小化期望轨迹代价与前向 KL 正则之和。MPPI、CEM、SVGD 和 diffusion-style MPC 的差别主要在于如何表示或近似这个后验：固定协方差高斯的均值更新、精英经验分布的矩匹配、相互排斥粒子流，以及多步退火生成，都是不同的近似策略。
+
+与之相对，MPO、AWR 和 SAC 通常在每个状态上构造动作条件分布，例如
+
+$$
+q^*(a\mid s)
+\propto
+\pi_{\mathrm{ref}}(a\mid s)
+\exp\left[\frac{Q(s,a)}{\eta}\right],
+\tag{84}
+$$
+
+随后将其投影到共享参数的反馈策略 $\pi_\theta(a\mid s)$。二者都有“参考分布乘指数效用”的变分骨架，但不能因此把它们视为同一个算法：式 (83) 的随机变量是整段开环控制序列，价值来自模型 rollout 的轨迹代价；式 (84) 的随机变量是给定状态的一步动作，跨时依赖由价值函数、Bellman 关系和状态访问分布吸收。
+
+最本质的区别是计算被放在何处。PI-MPC 每到一个状态便重新进行在线推断，计算量随控制周期重复发生，却能立即利用当前观测、显式模型、任务约束和最新环境变化。策略优化把这项推断**摊销**到训练期：利用大量状态样本学习一个可快速前向计算的 actor，以训练成本换取部署时的常数级决策延迟。摊销会引入函数近似和状态泛化误差；在线规划则承受模型误差和实时采样预算的限制。
+
+这也给出模型式 RL 中几种自然的混合路径：用 MPPI/CEM 从学习到的动力学模型生成训练数据；将 planner 的动作分布蒸馏为 actor；以预训练 actor 作为 PI-MPC 的控制先验；或在 actor 输出附近执行残差规划。它们不是“规划替代学习”或“学习替代规划”的二选一，而是在同一 KL 正则化分布改进框架中，分别选择在线计算、离线摊销或两者结合。
+
+因此，在比较算法时至少应同时说明：随机变量位于动作、控制序列还是占用测度上；参考分布是行为策略、旧策略、warm-start 控制序列还是生成先验；轨迹模型是否参与评估；以及理想分布是否被投影到跨状态共享的 actor。只有这些对象一致时，形式相同的指数权才可以作严格的算法比较。
+
 ---
 
 ## 七、生成式策略与扩散模型中的 score 表示
@@ -1678,14 +1710,15 @@ REPS/MPO/AWR、NPG/TRPO/PPO、SAC、CEM/CMA-ES、MPPI 与 diffusion-RL 均可由
 13. Williams, Aldrich, Theodorou, *Model Predictive Path Integral Control using Covariance Variable Importance Sampling*, 2015（[arXiv](https://arxiv.org/abs/1509.01149)）。
 14. Williams et al., *Information Theoretic Model Predictive Control*, 2017（[arXiv](https://arxiv.org/abs/1707.02342)）。
 15. Jordana et al., *An Introduction to Zero-Order Optimization Techniques for Robotics*, 2025；代码：[ajordana/zoo-rob](https://github.com/ajordana/zoo-rob)。
+16. Honda, *Model Predictive Control via Probabilistic Inference: A Tutorial and Survey*, 2026（[arXiv](https://arxiv.org/abs/2511.08019)）。
 
 ### 12.4 扩散策略与 RL
 
-16. Wang, Hunt, Zhou, *Diffusion Policies as an Expressive Policy Class for Offline Reinforcement Learning*（Diffusion-QL）, 2022（[arXiv](https://arxiv.org/abs/2208.06193)，[代码](https://github.com/twitter/diffusion-rl)）。
-17. Psenka et al., *Learning a Diffusion Model Policy from Rewards via Q-Score Matching*, 2023（[arXiv](https://arxiv.org/abs/2312.11752)，[代码](https://github.com/escontra/score_matching_rl)）。
-18. Ren et al., *Diffusion Policy Policy Optimization*, 2024（[arXiv](https://arxiv.org/abs/2409.00588)，[代码](https://github.com/irom-princeton/dppo)）。
-19. Black et al., *Training Diffusion Models with Reinforcement Learning*（DDPO）, 2023（[arXiv](https://arxiv.org/abs/2305.13301)）。
-20. Jackson et al., *Policy-Guided Diffusion*, 2024（[arXiv](https://arxiv.org/abs/2404.06356)，[代码](https://github.com/EmptyJackson/policy-guided-diffusion)）。
+17. Wang, Hunt, Zhou, *Diffusion Policies as an Expressive Policy Class for Offline Reinforcement Learning*（Diffusion-QL）, 2022（[arXiv](https://arxiv.org/abs/2208.06193)，[代码](https://github.com/twitter/diffusion-rl)）。
+18. Psenka et al., *Learning a Diffusion Model Policy from Rewards via Q-Score Matching*, 2023（[arXiv](https://arxiv.org/abs/2312.11752)，[代码](https://github.com/escontra/score_matching_rl)）。
+19. Ren et al., *Diffusion Policy Policy Optimization*, 2024（[arXiv](https://arxiv.org/abs/2409.00588)，[代码](https://github.com/irom-princeton/dppo)）。
+20. Black et al., *Training Diffusion Models with Reinforcement Learning*（DDPO）, 2023（[arXiv](https://arxiv.org/abs/2305.13301)）。
+21. Jackson et al., *Policy-Guided Diffusion*, 2024（[arXiv](https://arxiv.org/abs/2404.06356)，[代码](https://github.com/EmptyJackson/policy-guided-diffusion)）。
 
 ### 12.5 建议阅读顺序
 
